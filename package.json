@@ -1,0 +1,12 @@
+{
+  "name": "vectorizer-auto-click",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chrome extension: tự bấm OK (Pre-Crop) và DOWNLOAD trên Vectorizer.AI",
+  "scripts": {
+    "test": "node test/e2e.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

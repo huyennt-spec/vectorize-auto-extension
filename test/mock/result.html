@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Vectorizer.AI Result (mock)</title>
+<style>
+  body{font-family:sans-serif;margin:0}
+  .toolbar{display:flex;gap:8px;padding:6px;border-bottom:1px solid #ddd}
+  .toolbar .icon{width:28px;height:28px;background:#3b82f6;display:inline-block}
+  #canvas{height:300px;margin:20px;background:#fafafa;position:relative}
+  #progress{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.8)}
+  #dl{position:fixed;left:40%;bottom:30px;padding:14px 34px;border-radius:30px;background:#3b82f6;color:#fff;
+      text-transform:uppercase;text-decoration:none;font-weight:bold}
+  #dl.disabled{opacity:.5;pointer-events:none}
+</style></head>
+<body>
+  <div class="toolbar">
+    <a class="icon" href="#" title="Download"></a>
+    <a href="#">Download Options</a>
+    <a href="/" id="close">X</a>
+  </div>
+  <div id="canvas"><span>Vectorizer.AI Result</span><div id="progress"><span id="ptext">Vectorizing...</span></div></div>
+  <a id="dl" class="disabled" aria-disabled="true" href="#"><i class="material-icons">file_download</i> <span>Download</span></a>
+<script>
+  const dl = document.getElementById('dl');
+  const id = location.pathname.split('/').pop();
+  function process(newId, ms) {
+    dl.classList.add('disabled'); dl.setAttribute('aria-disabled', 'true');
+    document.getElementById('progress').style.display = 'flex';
+    setTimeout(() => {
+      document.getElementById('progress').style.display = 'none';
+      dl.href = '/download/' + newId;
+      dl.classList.remove('disabled'); dl.removeAttribute('aria-disabled');
+    }, ms);
+  }
+  process(id, 2000);
+  // Thả ảnh mới ngay trên trang kết quả: xử lý tại chỗ, không chuyển trang.
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    process(Date.now() + '-' + encodeURIComponent(e.dataTransfer.files[0].name), 2000);
+  });
+</script>
+</body></html>

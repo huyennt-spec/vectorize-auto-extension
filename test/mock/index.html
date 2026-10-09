@@ -1,0 +1,49 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Vectorizer.AI (mock)</title>
+<style>
+  body{font-family:sans-serif;margin:0}
+  nav a{margin:8px}
+  #drop{margin:20px;height:240px;border:3px dashed #999;display:flex;align-items:center;justify-content:center}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4)}
+  .modal{position:fixed;left:50px;top:40px;width:600px;height:420px;background:#fff;display:flex}
+  .modal .img{flex:1;background:#eee}
+  .modal .side{width:300px;padding:12px;position:relative}
+  .modal .actions{position:absolute;right:10px;bottom:10px}
+  .modal button{text-transform:uppercase;padding:10px 24px;border-radius:30px;border:0}
+  #ok{background:#3b82f6;color:#fff}
+</style></head>
+<body>
+  <nav><a href="/pricing">Pricing</a><a href="/api">API</a></nav>
+  <div id="drop">Drag image here <input type="file" id="file"></div>
+  <p id="status"></p>
+  <p>FAQ: You can use the pre-crop tool to crop large images before vectorizing them, which keeps the most detail.</p>
+  <div id="pre" hidden>
+    <div class="overlay"></div>
+    <div class="modal">
+      <div class="img"></div>
+      <div class="side">
+        <h2>Pre-Crop</h2>
+        <p>Your image size exceeds the size limit. For best results, please crop the image.</p>
+        <div class="actions"><button id="cancel">Cancel</button> <button id="ok">Ok</button></div>
+      </div>
+    </div>
+  </div>
+<script>
+  let current = null;
+  function upload(file) {
+    current = file;
+    if (/big/.test(file.name)) document.getElementById('pre').hidden = false;
+    else go();
+  }
+  function go() {
+    document.getElementById('status').textContent = 'Uploading...';
+    setTimeout(() => { location.href = '/images/' + Date.now() + '-' + encodeURIComponent(current.name); }, 500);
+  }
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => { e.preventDefault(); upload(e.dataTransfer.files[0]); });
+  document.getElementById('file').addEventListener('change', (e) => upload(e.target.files[0]));
+  document.getElementById('ok').addEventListener('mousedown', () => { window.__okDown = true; });
+  document.getElementById('ok').addEventListener('click', () => { document.getElementById('pre').hidden = true; go(); });
+  document.getElementById('cancel').addEventListener('click', () => { document.getElementById('pre').hidden = true; });
+</script>
+</body></html>

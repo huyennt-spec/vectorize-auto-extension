@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Vectorizer Auto Click",
+  "version": "1.0.0",
+  "description": "Kéo ảnh vào Vectorizer.AI là xong: tự bấm OK ở bảng Pre-Crop, tự bấm DOWNLOAD khi có kết quả.",
+  "minimum_chrome_version": "102",
+  "permissions": ["storage", "downloads"],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://vectorizer.ai/*", "https://*.vectorizer.ai/*"],
+      "js": ["src/shared.js", "src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Vectorizer Auto Click",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
