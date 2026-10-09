@@ -47,6 +47,18 @@
     dl.href = '/images/' + id + '/download';
   });
   process(id, 2000);
+  // Lớp trong suốt phủ cả trang (không phải bảng nào) → extension vẫn phải bấm được.
+  if (location.search.includes('overlay')) {
+    const o = document.createElement('div');
+    o.style.cssText = 'position:fixed;inset:0;z-index:5';
+    document.body.appendChild(o);
+  }
+  // Trang khó tính: không nhận cú bấm do script gửi (chỉ nhận chuột thật).
+  if (location.search.includes('strict')) {
+    dl.addEventListener('click', (e) => { if (!e.isTrusted) e.preventDefault(); });
+  }
+  // Web tự xử lý ảnh mới mà không qua kéo/thả (để thử nhận việc từ bảng tiến trình).
+  window.__reprocess = (name) => process(Date.now() + '-' + encodeURIComponent(name), 2000);
   // Thả ảnh mới ngay trên trang kết quả: xử lý tại chỗ, không chuyển trang.
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => {

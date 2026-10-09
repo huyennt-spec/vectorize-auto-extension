@@ -77,6 +77,7 @@ async function drop(page, name) {
   await drop(page, 'big-tim-anh.png');
   await page.waitForURL(/\/images\/[^/]+$/, { timeout: 8000 });
   assert.ok(await page.isVisible('#modal'), 'bảng Upload/Process/Fetch phải đang hiện');
+  await waitFor(async () => /Chờ xử lý xong/.test(await toastText()), 3000, 'thông báo đang chờ');
   await page.waitForURL(/\/download$/, { timeout: 10000 });
   await waitFor(() => downloads.length === 1, 15000, 'tải file 1');
   assert.strictEqual(downloads[0], 'big-tim-anh.svg');
@@ -134,7 +135,34 @@ async function drop(page, name) {
   assert.strictEqual(downloads[3], 'next.svg');
   await expectCount(4, 3000);
   assert.strictEqual((await stats()).total, 4);
+  await waitFor(async () => !(await sw.evaluate(() => chrome.storage.session.get(null)
+    .then((s) => Object.keys(s).some((k) => k.startsWith('job:'))))), 3000, 'xoá việc sau khi tải xong');
   console.log('✔ 7. Thả ảnh mới trên trang kết quả');
+
+  // 7b) Trang không nhận cú bấm của script → tự mở thẳng link của nút DOWNLOAD
+  await page.goto(`${HOME}images/789-old.png?strict=1`);
+  await sleep(3500);
+  await drop(page, 'strict.png');
+  await waitFor(() => downloads.length === 5, 25000, 'tải file strict');
+  assert.strictEqual(downloads[4], 'strict.svg');
+  console.log('✔ 7b. Bấm không ăn thì mở thẳng link');
+
+  // 7c) Có lớp trong suốt phủ lên nút (không phải bảng nào) → vẫn bấm sau vài giây
+  await page.goto(`${HOME}images/791-old.png?overlay=1`);
+  await sleep(3500);
+  await drop(page, 'overlay.png');
+  await waitFor(() => downloads.length === 6, 20000, 'tải file overlay');
+  assert.strictEqual(downloads[5], 'overlay.svg');
+  console.log('✔ 7c. Nút bị lớp trong suốt phủ vẫn bấm được');
+
+  // 7d) Bảng Upload/Process/Fetch hiện ra giữa chừng mà không có kéo/thả → vẫn tự làm
+  await page.goto(`${HOME}images/790-old.png`);
+  await sleep(3500);
+  await page.evaluate(() => window.__reprocess('silent.png'));
+  await waitFor(() => downloads.length === 7, 15000, 'tải file silent');
+  assert.strictEqual(downloads[6], 'silent.svg');
+  await expectCount(7, 3000);
+  console.log('✔ 7d. Nhận việc từ bảng tiến trình');
 
   // 8) Popup hỏi trạng thái / thông tin lỗi
   assert.ok((await askTab({ type: 'va:ping' })).ok);
@@ -150,8 +178,8 @@ async function drop(page, name) {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/shared.js', 'src/content.js'] });
   });
   await drop(page, 'big-reinject.png');
-  await waitFor(() => downloads.length === 5, 15000, 'tải file 5');
-  await expectCount(5, 4000);
+  await waitFor(() => downloads.length === 8, 15000, 'tải file 8');
+  await expectCount(8, 4000);
   console.log('✔ 9. Chèn script lại không bị chạy đôi');
 
   // 10) Tắt extension → không bấm gì
@@ -160,7 +188,7 @@ async function drop(page, name) {
   await sleep(500);
   await drop(page, 'small-off.png');
   await page.waitForURL(/\/images\//, { timeout: 8000 });
-  await expectCount(5, 5000);
+  await expectCount(8, 5000);
   console.log('✔ 10. Tắt extension thì không bấm');
 
   await context.close();

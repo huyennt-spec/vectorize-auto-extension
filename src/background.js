@@ -38,15 +38,39 @@ function notifyTab(tabId, msg) {
   chrome.tabs.sendMessage(tabId, msg).catch(() => {});
 }
 
+// Việc đang làm của từng tab được giữ ở đây (không phụ thuộc bộ nhớ của trang), nên
+// trang có chuyển đi đâu trong cùng cửa sổ thì vẫn nhớ đang chờ tải ảnh nào.
+const jobKey = (tabId) => `job:${tabId}`;
+
+async function setJob(tabId, job) {
+  if (job) await chrome.storage.session.set({ [jobKey(tabId)]: job });
+  else await chrome.storage.session.remove(jobKey(tabId));
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg?.type !== 'va:clicked' || !sender.tab) return;
-  serial(async () => {
-    const { pending } = await getState();
-    pending[sender.tab.id] = { at: Date.now(), jobId: msg.jobId, name: msg.name };
-    await chrome.storage.session.set({ pending });
-  }).finally(() => sendResponse({ ok: true }));
-  return true;
+  const tabId = sender.tab?.id;
+  if (tabId === undefined) return;
+  if (msg?.type === 'va:job:get') {
+    serial(async () => (await chrome.storage.session.get(jobKey(tabId)))[jobKey(tabId)] || null)
+      .then((job) => sendResponse(job), () => sendResponse(null));
+    return true;
+  }
+  if (msg?.type === 'va:job:set') {
+    serial(() => setJob(tabId, msg.job)).finally(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg?.type === 'va:clicked') {
+    serial(async () => {
+      const { pending } = await getState();
+      pending[tabId] = { at: Date.now(), jobId: msg.job.id, name: msg.job.name };
+      await chrome.storage.session.set({ pending });
+      await setJob(tabId, msg.job);
+    }).finally(() => sendResponse({ ok: true }));
+    return true;
+  }
 });
+
+chrome.tabs.onRemoved.addListener((tabId) => serial(() => setJob(tabId, null)));
 
 chrome.downloads.onCreated.addListener((item) => serial(async () => {
   const { pending, dlmap } = await getState();
@@ -66,6 +90,7 @@ chrome.downloads.onCreated.addListener((item) => serial(async () => {
   delete pending[best.tabId];
   dlmap[item.id] = { tabId: best.tabId, jobId: best.jobId };
   await chrome.storage.session.set({ pending, dlmap });
+  notifyTab(best.tabId, { type: 'va:dlStarted', jobId: best.jobId });
   if (item.state === 'complete') await finish(item.id, 'complete');
 }));
 
@@ -82,6 +107,10 @@ async function finish(downloadId, state, error) {
   if (!m) return;
   delete dlmap[downloadId];
   await chrome.storage.session.set({ dlmap });
+  // Xong việc: xoá luôn ở đây, phòng khi trang đang chuyển nên không nhận được tin nhắn.
+  const key = jobKey(m.tabId);
+  const { [key]: job } = await chrome.storage.session.get(key);
+  if (job?.id === m.jobId) await setJob(m.tabId, null);
   const [item] = await chrome.downloads.search({ id: downloadId });
   const filename = basename(item?.filename);
   if (state === 'complete') {
