@@ -50,7 +50,8 @@ async function drop(page, name) {
         body: '<svg xmlns="http://www.w3.org/2000/svg"/>',
       });
     }
-    const file = url.pathname.startsWith('/images/') ? 'result.html' : 'index.html';
+    const file = !url.pathname.startsWith('/images/') ? 'index.html'
+      : url.pathname.endsWith('/download') ? 'download.html' : 'result.html';
     return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fs.readFileSync(path.join(MOCK, file)) });
   });
 
@@ -69,12 +70,13 @@ async function drop(page, name) {
   await page.goto(HOME);
   await sleep(500);
   await drop(page, 'big-tim-anh.png');
-  await page.waitForURL(/\/images\//, { timeout: 8000 });
+  await page.waitForURL(/\/images\/[^/]+$/, { timeout: 8000 });
+  await page.waitForURL(/\/download$/, { timeout: 8000 });
   await waitFor(() => downloads.length === 1, 15000, 'tải file 1');
   assert.strictEqual(downloads[0], 'big-tim-anh.svg');
   await page.waitForURL(HOME, { timeout: 8000 });
   assert.strictEqual((await stats()).total, 1);
-  console.log('✔ 1. Pre-Crop OK → DOWNLOAD → về trang chính');
+  console.log('✔ 1. Pre-Crop OK → DOWNLOAD → trang Download → Download → về trang chính');
 
   // 2) Mở lại trang kết quả cũ (không có job) → không được tải trùng
   await page.goto(`${HOME}images/123-old.png`);
@@ -102,11 +104,14 @@ async function drop(page, name) {
   await waitFor(() => downloads.length === 2, 15000, 'tải file 2');
   assert.strictEqual(downloads[1], 'small.svg');
   await sleep(3000);
-  assert.match(page.url(), /\/images\//);
+  assert.match(page.url(), /\/download$/);
   assert.match(await toastText(), /Đã tải xong/);
   console.log('✔ 4. Ảnh nhỏ tải được, không tự về khi đã tắt');
 
   // 5) Thả ảnh mới ngay trên trang kết quả (xử lý tại chỗ) → tải ảnh mới, không tải lại ảnh cũ
+  await page.goto(`${HOME}images/456-small.png`);
+  await sleep(3500); // Nút DOWNLOAD của ảnh cũ đã sẵn sàng
+  assert.strictEqual(downloads.length, 2);
   await drop(page, 'next.png');
   await waitFor(() => downloads.length === 3, 15000, 'tải file 3');
   assert.strictEqual(downloads[2], 'next.svg');

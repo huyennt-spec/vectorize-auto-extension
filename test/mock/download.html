@@ -1,0 +1,36 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Download - Vectorizer.AI (mock)</title>
+<style>
+  body{font-family:sans-serif;margin:0}
+  header{padding:10px;border-bottom:1px solid #ddd}
+  header a{margin-right:16px}
+  .card{margin:20px;padding:20px;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,.15);position:relative}
+  h1{font-size:40px;margin:0}
+  .btn{display:inline-block;padding:16px 40px;border-radius:12px;background:#3b82f6;color:#fff;text-decoration:none;font-size:20px}
+  #main{position:absolute;right:20px;top:20px}
+  .formats{display:flex;gap:10px}
+  .fmt{border:1px solid #ccc;border-radius:8px;padding:10px 20px;text-align:center;cursor:pointer}
+  .fmt.sel{border-color:#3b82f6;background:#eef4ff}
+</style></head>
+<body>
+  <header><a href="/">Vectorizer.AI</a><a href="/api">Developers</a><a href="/pricing">Pricing</a></header>
+  <div class="card">
+    <h1>Download</h1>
+    <p id="name"></p>
+    <a id="main" class="btn" href="#"><i class="material-icons">file_download</i> Download</a>
+    <h3>File format</h3>
+    <div class="formats">
+      <div class="fmt sel"><b>SVG</b><br><small>Web &amp; apps</small></div>
+      <div class="fmt"><b>PDF</b><br><small>Documents</small></div>
+      <div class="fmt"><b>PNG</b><br><small>Clean bitmap</small></div>
+    </div>
+    <h3>Optimize for</h3>
+    <div class="formats"><div class="fmt sel">General use (default)</div><div class="fmt">Easy editing</div></div>
+    <p><a class="btn" id="bottom" href="#" style="font-size:14px;padding:8px 16px">Download</a></p>
+  </div>
+<script>
+  const id = location.pathname.split('/')[2];
+  document.getElementById('name').textContent = decodeURIComponent(id.split('-').slice(1).join('-'));
+  for (const a of document.querySelectorAll('a.btn')) a.href = '/download/' + id;
+</script>
+</body></html>

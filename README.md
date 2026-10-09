@@ -7,8 +7,10 @@ Extension cho Chrome / Edge / Cốc Cốc giúp dùng [Vectorizer.AI](https://ve
 
 1. Bạn kéo ảnh vào trang (hoặc app đã cài) Vectorizer.AI.
 2. Nếu hiện bảng **Pre-Crop** (ảnh lớn hơn giới hạn) → tự bấm **OK**.
-3. Khi có kết quả → tự bấm **DOWNLOAD**, file về thư mục Tải xuống như khi bạn tự bấm.
-4. Tải xong → tự quay về trang chính để bạn kéo ảnh tiếp theo.
+3. Khi có kết quả → tự bấm **DOWNLOAD**.
+4. Sang trang **Download** (chọn SVG/PDF…) → tự bấm nút **Download** xanh, file về thư mục
+   Tải xuống như khi bạn tự bấm.
+5. Tải xong → tự quay về trang chính để bạn kéo ảnh tiếp theo.
 
 Góc dưới bên trái trang có thông báo nhỏ cho biết extension đang làm gì.
 
@@ -17,7 +19,7 @@ trang sẽ không tự tải trùng.
 
 ## Cài đặt
 
-1. Tải file `vectorizer-auto-click-v1.0.0.zip` rồi giải nén. Bạn sẽ có thư mục
+1. Tải file `vectorizer-auto-click-v1.1.0.zip` rồi giải nén. Bạn sẽ có thư mục
    `vectorizer-auto-click` (bên trong có file `manifest.json`).
    *(Hoặc trên GitHub: chọn nhánh này → **Code** → **Download ZIP**.)*
 2. Mở trang quản lý tiện ích:
@@ -28,7 +30,19 @@ trang sẽ không tự tải trùng.
 4. Bấm **Tải tiện ích đã giải nén** (*Load unpacked*) → chọn thư mục ở bước 1.
 5. Đóng hẳn rồi mở lại Vectorizer.AI (hoặc bấm F5) một lần.
 
-Extension chạy được cả trong **cửa sổ app Vectorizer.AI đã cài** vào máy.
+### Dùng với app Vectorizer.AI đã cài
+
+App Vectorizer.AI cài vào máy là **app của Chrome** (bấm ⋮ trong app sẽ thấy dòng
+*"Mở trong Chrome"*). Vì vậy chỉ cần cài extension vào **Chrome** là app tự có, không phải cài
+gì thêm. Nhớ đóng app rồi mở lại sau khi cài.
+
+Icon extension (chữ **V** xanh) để bật/tắt không hiện trong cửa sổ app, mà nằm trên thanh công
+cụ của cửa sổ Chrome bình thường (bấm hình mảnh ghép 🧩 → ghim *Vectorizer Auto Click*).
+
+### Cập nhật bản mới
+
+Giải nén bản mới đè lên thư mục cũ → vào `chrome://extensions` → bấm nút tải lại ⟳ của
+*Vectorizer Auto Click* → đóng app Vectorizer.AI rồi mở lại.
 
 > **Lần tải đầu tiên:** nếu trình duyệt hỏi *"Tải xuống nhiều tệp"* (*Download multiple files*)
 > thì chọn **Cho phép**. Trình duyệt sẽ nhớ và không hỏi lại.
@@ -37,7 +51,7 @@ Extension chạy được cả trong **cửa sổ app Vectorizer.AI đã cài** 
 
 ## Tuỳ chỉnh
 
-Bấm icon extension (chữ **V** xanh trên thanh công cụ) để bật/tắt:
+Bấm icon extension (chữ **V** xanh trên thanh công cụ Chrome) để bật/tắt:
 
 | Tuỳ chọn | Mặc định |
 | --- | --- |
@@ -49,7 +63,8 @@ Bấm icon extension (chữ **V** xanh trên thanh công cụ) để bật/tắt
 
 Popup cũng đếm số file đã tải hôm nay / tổng cộng.
 
-Định dạng tải về là định dạng mặc định khi bấm DOWNLOAD trên web (SVG).
+Định dạng tải về là định dạng đang được chọn ở trang Download (mặc định là SVG).
+Extension không đổi lựa chọn đó.
 
 ## Nếu extension không bấm
 
@@ -63,7 +78,7 @@ Popup cũng đếm số file đã tải hôm nay / tổng cộng.
 ```
 manifest.json       Khai báo extension (Manifest V3)
 src/shared.js       Cài đặt mặc định, dùng chung
-src/content.js      Chạy trên vectorizer.ai: nhận ảnh, bấm OK / DOWNLOAD, quay về trang chính
+src/content.js      Chạy trên vectorizer.ai: nhận ảnh, bấm OK / DOWNLOAD / Download, về trang chính
 src/background.js   Theo dõi file tải về, báo tab khi tải xong, đếm số file
 popup/              Giao diện bật/tắt
 test/               Trang giả lập Vectorizer.AI + kiểm thử tự động (Playwright)

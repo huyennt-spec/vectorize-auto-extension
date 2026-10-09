@@ -13,6 +13,7 @@
   const JOB_TTL_MS = 10 * 60 * 1000;     // Bỏ job nếu quá 10 phút chưa có kết quả
   const STABLE_MS = 800;                 // Nút phải sẵn sàng liên tục bấy lâu mới bấm
   const DOWNLOAD_CONFIRM_MS = 30 * 1000; // Chờ file tải về tối đa bấy lâu sau khi bấm
+  const MAX_CLICKS = 3;                  // Số lần bấm "Download" tối đa cho mỗi ảnh
   const RETURN_DELAY_MS = 1500;          // Tải xong chờ bấy lâu rồi quay về trang chính
   const BUSY_MAX_MS = 60 * 1000;         // Bỏ qua dấu hiệu "đang xử lý" nếu kéo dài quá lâu
 
@@ -32,7 +33,6 @@
   let sawNotReady = false; // Đã thấy nút DOWNLOAD biến mất/bị khoá kể từ lúc bắt đầu job
   let precropAttempts = 0;
   let lastPrecropClickAt = 0;
-  let confirmTimer = 0;
   let returnTimer = 0;
   let toastHost = null;
   let toastBox = null;
@@ -65,7 +65,6 @@
   function startJob(name) {
     if (!settings.enabled) return;
     cancelReturn();
-    clearTimeout(confirmTimer);
     const dl = findDownloadButton();
     job = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
@@ -74,7 +73,8 @@
       // Nếu thả ảnh mới ngay trên trang kết quả cũ thì nút DOWNLOAD cũ đang hiện:
       // nhớ lại để không bấm nhầm nút của ảnh trước.
       startDlKey: dl && isReady(dl) ? dlKey(dl) : null,
-      stage: 'waiting',
+      stage: 'waiting',  // 'waiting' → chờ kết quả, 'downloading' → đã bấm, chờ file về
+      clickedKeys: [],   // Các nút Download đã bấm (trang kết quả, trang Download…)
     };
     readySince = 0;
     notReadySince = 0;
@@ -87,7 +87,6 @@
   function finishJob() {
     job = null;
     saveJob();
-    clearTimeout(confirmTimer);
   }
 
   function filesOf(dt) {
@@ -270,6 +269,8 @@
   }
 
   // ---------- Bước 2: có kết quả → bấm DOWNLOAD ----------
+  // Bấm DOWNLOAD ở trang kết quả sẽ mở trang "Download" (chọn SVG/PDF…), ở đó lại có
+  // nút Download để tải file thật. Mỗi nút (theo địa chỉ trang + link) chỉ bấm một lần.
   async function handleDownload() {
     const el = findDownloadButton();
     const now = Date.now();
@@ -283,11 +284,16 @@
     if (!readySince) readySince = now;
     if (now - readySince < STABLE_MS) return;
     if (now - readySince < BUSY_MAX_MS && isBusy()) return;
+    const key = dlKey(el);
+    const clicked = job.clickedKeys || [];
+    if (clicked.includes(key) || clicked.length >= MAX_CLICKS) return;
     // Vẫn là nút DOWNLOAD của ảnh trước → chờ ảnh mới.
-    if (job.startDlKey && job.startDlKey === dlKey(el) && !sawNotReady) return;
+    if (job.startDlKey && job.startDlKey === key && !sawNotReady) return;
 
+    const prev = { stage: job.stage, clickedAt: job.clickedAt };
     job.stage = 'downloading';
     job.clickedAt = now;
+    job.clickedKeys = [...clicked, key];
     saveJob();
     const jobId = job.id;
     // Báo background trước khi bấm để nó nhận ra file tải về thuộc ảnh này.
@@ -297,20 +303,13 @@
     ]);
     if (!job || job.id !== jobId) return;
     if (!el.isConnected) { // Nút vừa bị vẽ lại → lần sau tìm lại
-      job.stage = 'waiting';
+      Object.assign(job, prev, { clickedKeys: clicked });
       saveJob();
       readySince = 0;
       return;
     }
     realClick(el);
-    toast('⬇️ Đã tự bấm DOWNLOAD, đang tải…');
-    clearTimeout(confirmTimer);
-    confirmTimer = setTimeout(() => {
-      if (!job || job.id !== jobId) return;
-      finishJob();
-      toast('⚠️ Đã bấm DOWNLOAD nhưng chưa thấy file về. Xem biểu tượng tải xuống của trình duyệt '
-        + '(có thể đang hỏi "Cho phép tải nhiều tệp").', 'warn', 12000);
-    }, DOWNLOAD_CONFIRM_MS);
+    toast(clicked.length ? '⬇️ Đã tự bấm Download ở trang tải về…' : '⬇️ Đã tự bấm DOWNLOAD…');
   }
 
   // ---------- Bước 3: tải xong → quay về trang chính ----------
@@ -348,9 +347,12 @@
     if (!settings.enabled || !document.body) return;
     if (job && Date.now() - job.startedAt > JOB_TTL_MS) finishJob();
     if (settings.autoPrecrop) handlePrecrop();
-    if (job && job.stage === 'waiting' && settings.autoDownload) handleDownload();
-    // Job đang chờ xác nhận tải mà trang đã tải lại quá lâu → bỏ.
-    if (job && job.stage === 'downloading' && Date.now() - job.clickedAt > DOWNLOAD_CONFIRM_MS) finishJob();
+    if (job && job.stage === 'downloading' && Date.now() - job.clickedAt > DOWNLOAD_CONFIRM_MS) {
+      finishJob();
+      toast('⚠️ Đã bấm DOWNLOAD nhưng chưa thấy file về. Xem biểu tượng tải xuống của trình duyệt '
+        + '(có thể đang hỏi "Cho phép tải nhiều tệp").', 'warn', 12000);
+    }
+    if (job && settings.autoDownload) handleDownload();
   }
 
   function safeTick() {

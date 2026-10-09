@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Vectorizer Auto Click",
-  "version": "1.0.0",
-  "description": "Kéo ảnh vào Vectorizer.AI là xong: tự bấm OK ở bảng Pre-Crop, tự bấm DOWNLOAD khi có kết quả.",
+  "version": "1.1.0",
+  "description": "Kéo ảnh vào Vectorizer.AI là xong: tự bấm OK ở bảng Pre-Crop, tự bấm DOWNLOAD và nút Download ở trang tải về.",
   "minimum_chrome_version": "102",
   "permissions": ["storage", "downloads"],
   "background": {

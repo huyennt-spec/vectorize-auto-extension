@@ -26,7 +26,7 @@
     document.getElementById('progress').style.display = 'flex';
     setTimeout(() => {
       document.getElementById('progress').style.display = 'none';
-      dl.href = '/download/' + newId;
+      dl.href = '/images/' + newId + '/download';
       dl.classList.remove('disabled'); dl.removeAttribute('aria-disabled');
     }, ms);
   }
