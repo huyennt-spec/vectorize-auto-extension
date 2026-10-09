@@ -93,7 +93,6 @@
     stoppedAt = 0;
     busyAfterStop = false;
     saveJob();
-    status('📥 Đã nhận ảnh');
   }
 
   function finishJob() {
@@ -106,7 +105,6 @@
     stoppedAt = Date.now();
     busyAfterStop = true;
     precropAttempts = MAX_PRECROP_CLICKS; // Không bấm OK lại cho bảng đang mở
-    status('⏹ Đã dừng', 'info', false);
   }
 
   function filesOf(dt) {
@@ -322,7 +320,6 @@
     precropAttempts++;
     lastPrecropClickAt = Date.now();
     realClick(ok);
-    status('✅ Đã bấm OK');
   }
 
   // ---------- Bước 2: có kết quả → bấm DOWNLOAD ----------
@@ -334,24 +331,18 @@
     const busy = scan.busyModal || !!scan.precropHeading;
     const uncovered = !!el && isUncovered(el);
     if (!el || uncovered) coveredSince = 0;
-    let wait = null; // Lý do còn chờ, hiện lên thông báo
-    if (!el) wait = 'result';
-    else if (busy) wait = 'busy';
-    else if (!isEnabled(el)) wait = 'locked';
+    let wait = false; // Còn phải chờ
+    if (!el || busy || !isEnabled(el)) wait = true;
     else if (!uncovered) {
       // Có vẻ bị che nhưng không có bảng nào đang hiện: chờ thêm chút rồi vẫn bấm.
       if (!coveredSince) coveredSince = now;
-      if (now - coveredSince < COVERED_GRACE_MS) wait = 'busy';
+      if (now - coveredSince < COVERED_GRACE_MS) wait = true;
     }
 
     if (wait) {
       readySince = 0;
       if (!notReadySince) notReadySince = now;
       if (now - notReadySince > 500) sawNotReady = true;
-      if (job.stage === 'waiting') {
-        status(wait === 'result' ? '⏳ Chờ kết quả…' : wait === 'busy' ? '⏳ Chờ xử lý xong…'
-          : '⏳ Chờ nút DOWNLOAD…', 'info', true);
-      }
       return;
     }
     notReadySince = 0;
@@ -362,10 +353,7 @@
     const clicked = job.clickedKeys || [];
     if (clicked.includes(key) || clicked.length >= MAX_CLICKS) return;
     // Vẫn là nút DOWNLOAD của ảnh trước → chờ ảnh mới.
-    if (job.startDlKey && job.startDlKey === key && !sawNotReady) {
-      status('⏳ Chờ kết quả…', 'info', true);
-      return;
-    }
+    if (job.startDlKey && job.startDlKey === key && !sawNotReady) return;
 
     const prev = { stage: job.stage, clickedAt: job.clickedAt, last: job.last };
     job.stage = 'downloading';
@@ -386,7 +374,6 @@
       return;
     }
     realClick(el);
-    status('⬇️ Đang tải…', 'info', true);
   }
 
   // Đã bấm mà trang đứng yên, chưa có file → mở thẳng link của nút (như bạn tự mở link).
@@ -415,12 +402,8 @@
     if (msg.type === 'va:dlStarted') {
       job.dlStarted = true;
       saveJob();
-    } else if (msg.type === 'va:dlComplete') {
+    } else if (msg.type === 'va:dlComplete' || msg.type === 'va:dlFailed') {
       finishJob();
-      status('✅ Đã tải xong', 'ok');
-    } else if (msg.type === 'va:dlFailed') {
-      finishJob();
-      status('⚠️ Tải lỗi, hãy bấm Download lại', 'warn');
     }
   });
 
@@ -475,10 +458,7 @@
 
   // ---------- Vòng lặp ----------
   function tick() {
-    if (!settings.enabled || !document.body) {
-      if (statusSticky) status('');
-      return;
-    }
+    if (!settings.enabled || !document.body) return;
     scan = scanPage();
     if (!scan.busyModal) busyAfterStop = false;
     if (job && Date.now() - job.startedAt > JOB_TTL_MS) finishJob();
@@ -487,67 +467,24 @@
     // Bảng hiện ngay lúc vừa mở trang (mở lại ảnh cũ, tải lại trang) thì không tính.
     if (!job && jobLoaded && scan.busyModal && !busyAfterStop && Date.now() - startedAt > 3000
       && Date.now() - stoppedAt > STOP_COOLDOWN_MS) startJob('ảnh');
-    if (job && job.stage === 'downloading' && Date.now() - job.clickedAt > DOWNLOAD_CONFIRM_MS) {
-      finishJob();
-      status('⚠️ Chưa thấy file về', 'warn');
-    }
+    if (job && job.stage === 'downloading' && Date.now() - job.clickedAt > DOWNLOAD_CONFIRM_MS) finishJob();
     if (job && settings.autoDownload) {
       handleFallback();
       handleDownload();
     }
-    if (!job && statusSticky) status('');
   }
 
   function stop() {
     ac.abort();
     clearInterval(interval);
     observer.disconnect();
-    toastHost?.remove();
+    document.getElementById('ac-toast')?.remove(); // Thông báo của bản cũ (nếu còn)
   }
   globalThis.__autoClickStop = stop;
 
   function safeTick() {
     if (!chrome.runtime?.id) return stop(); // Extension vừa được cập nhật/gỡ → dừng bản cũ
     try { tick(); } catch (e) { console.debug('[Auto Click]', e); }
-  }
-
-  // ---------- Thông báo nhỏ trên trang ----------
-  // sticky = true: giữ nguyên tới khi có thông báo khác (dùng lúc đang chờ / đang tải).
-  let toastHost = null;
-  let toastBox = null;
-  let toastTimer = 0;
-  let statusSticky = false;
-
-  function status(msg, kind = 'info', sticky = false) {
-    if (!msg || !settings.showToast) {
-      if (toastBox) toastBox.classList.remove('show');
-      statusSticky = false;
-      return;
-    }
-    if (!toastHost || !toastHost.isConnected) {
-      document.getElementById('ac-toast')?.remove();
-      toastHost = document.createElement('div');
-      toastHost.id = 'ac-toast';
-      toastHost.style.cssText = 'all:initial;position:fixed;left:16px;bottom:16px;'
-        + 'z-index:2147483647;pointer-events:none;';
-      const root = toastHost.attachShadow({ mode: 'open' });
-      root.innerHTML = `<style>
-        .t{font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;background:#1f2937;
-          padding:8px 12px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:360px;
-          opacity:0;transform:translateY(6px);transition:opacity .2s,transform .2s}
-        .t.show{opacity:.95;transform:none}
-        .t.ok{background:#047857}.t.warn{background:#b45309}
-      </style><div class="t"></div>`;
-      toastBox = root.querySelector('.t');
-      document.documentElement.appendChild(toastHost);
-    }
-    statusSticky = sticky;
-    if (toastBox.textContent !== msg || !toastBox.classList.contains('show')) {
-      toastBox.textContent = msg;
-      toastBox.className = `t show ${kind}`;
-    }
-    clearTimeout(toastTimer);
-    if (!sticky) toastTimer = setTimeout(() => toastBox.classList.remove('show'), kind === 'warn' ? 8000 : 3000);
   }
 
   let scheduled = false;

@@ -17,28 +17,15 @@ Muốn làm ảnh tiếp thì cứ kéo ảnh mới vào, ở trang nào cũng �
 **Muốn dừng:** bấm **CANCEL** (hoặc nút đóng ×, hoặc phím **Esc**) như bình thường,
 extension sẽ dừng theo và không bấm gì nữa cho ảnh đó.
 
-Góc dưới bên trái trang có thông báo ngắn cho biết extension đang làm gì. Lúc đang chờ thì
-thông báo đứng yên cho tới khi xong:
-
-| Thông báo | Nghĩa |
-| --- | --- |
-| 📥 Đã nhận ảnh | Vừa thấy bạn kéo ảnh vào |
-| ✅ Đã bấm OK | Đã bấm OK ở bảng Pre-Crop |
-| ⏳ Chờ xử lý xong… | Bảng Upload / Process / Fetch đang chạy |
-| ⏳ Chờ kết quả… | Chưa thấy nút DOWNLOAD |
-| ⏳ Chờ nút DOWNLOAD… | Có nút nhưng đang bị khoá |
-| ⬇️ Đang tải… | Đã bấm DOWNLOAD / Download, đang chờ file về |
-| ✅ Đã tải xong | File đã về máy |
-| ⏹ Đã dừng | Bạn vừa bấm CANCEL / Esc |
-
-Nếu bấm nút mà trang không phản ứng, sau vài giây extension tự mở thẳng đường link của nút.
+Extension **chạy ngầm**: không hiện thông báo hay nút gì trên trang. Nếu bấm nút mà trang
+không phản ứng, sau vài giây extension tự mở thẳng đường link của nút.
 
 Extension chỉ tự bấm khi bạn **vừa kéo, chọn hoặc dán ảnh**. Mở lại ảnh cũ hay tải lại
 trang sẽ không tự tải trùng.
 
 ## Cài đặt
 
-1. Tải file `vectorizer-auto-click-v1.3.0.zip` rồi giải nén. Bạn sẽ có thư mục
+1. Tải file `vectorizer-auto-click-v1.4.0.zip` rồi giải nén. Bạn sẽ có thư mục
    `vectorizer-auto-click` (bên trong có file `manifest.json`).
 2. Mở Chrome (cửa sổ bình thường), vào `chrome://extensions`.
 3. Bật **Chế độ dành cho nhà phát triển** (*Developer mode*).
@@ -71,7 +58,6 @@ Giải nén bản mới đè lên thư mục cũ → vào `chrome://extensions` 
 | Bật tự động (tắt hết) | Bật |
 | Tự bấm **OK** ở bảng Pre-Crop | Bật |
 | Tự bấm **DOWNLOAD** khi có kết quả | Bật |
-| Hiện thông báo nhỏ trên trang | Bật |
 
 Bảng này còn cho biết extension **có đang chạy trên trang đang mở không**, và đếm số file
 đã tải hôm nay / tổng cộng.
@@ -81,13 +67,11 @@ Extension không đổi lựa chọn đó.
 
 ## Nếu extension vẫn không bấm
 
-1. Chụp màn hình lúc bị kẹt, **có cả thông báo ở góc dưới bên trái** (nó cho biết đang chờ gì).
-   Không thấy thông báo nào nghĩa là extension không nhận ra bạn vừa kéo ảnh vào.
-2. Mở bảng bật/tắt (🧩 → **Auto Click**) ngay lúc bị kẹt: dòng trạng thái phải là
+1. Mở bảng bật/tắt (🧩 → **Auto Click**) ngay lúc bị kẹt: dòng trạng thái phải là
    **✓ Đang chạy trên trang này**.
-3. Bấm **Sao chép thông tin lỗi** rồi dán gửi cho người hỗ trợ, kèm ảnh chụp màn hình bước bị
-   kẹt. Thông tin này chỉ gồm các nút trên trang (chữ, vị trí, trạng thái), không có ảnh
-   của bạn.
+2. Bấm **Sao chép thông tin lỗi** rồi dán gửi cho người hỗ trợ, kèm ảnh chụp màn hình bước bị
+   kẹt. Thông tin này chỉ gồm các nút trên trang (chữ, vị trí, trạng thái) và việc extension
+   đang chờ, không có ảnh của bạn.
 
 ## Dành cho người phát triển
 

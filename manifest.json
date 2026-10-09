@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Auto Click",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Kéo ảnh vào là xong: tự bấm OK và Download, tải file về máy.",
   "minimum_chrome_version": "102",
   "permissions": [

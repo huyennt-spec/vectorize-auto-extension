@@ -67,8 +67,10 @@ async function drop(page, name) {
   const page = await context.newPage();
   page.on('download', (d) => downloads.push(d.suggestedFilename()));
   page.on('console', (m) => { if (/Auto Click/.test(m.text())) console.log('  [page]', m.text()); });
-  const toastText = () => page.evaluate(() => document.getElementById('ac-toast')
-    ?.shadowRoot.querySelector('.t').textContent || '');
+  const hasJob = () => sw.evaluate(() => chrome.storage.session.get(null)
+    .then((s) => Object.keys(s).some((k) => k.startsWith('job:'))));
+  const noOverlay = async () => assert.ok(await page.evaluate(() => !document.getElementById('ac-toast')
+    && ![...document.querySelectorAll('body *')].some((el) => el.shadowRoot)), 'không được hiện gì trên trang');
   const expectCount = async (n, ms = 4000) => { await sleep(ms); assert.strictEqual(downloads.length, n); };
 
   // 1) Ảnh lớn: OK ở Pre-Crop → chờ Upload/Process/Fetch → DOWNLOAD → trang Download → Download
@@ -77,12 +79,13 @@ async function drop(page, name) {
   await drop(page, 'big-tim-anh.png');
   await page.waitForURL(/\/images\/[^/]+$/, { timeout: 8000 });
   assert.ok(await page.isVisible('#modal'), 'bảng Upload/Process/Fetch phải đang hiện');
-  await waitFor(async () => /Chờ xử lý xong/.test(await toastText()), 3000, 'thông báo đang chờ');
+  await noOverlay();
   await page.waitForURL(/\/download$/, { timeout: 10000 });
   await waitFor(() => downloads.length === 1, 15000, 'tải file 1');
   assert.strictEqual(downloads[0], 'big-tim-anh.svg');
-  await waitFor(async () => /Đã tải xong/.test(await toastText()), 5000, 'thông báo tải xong');
-  assert.strictEqual((await stats()).total, 1);
+  await waitFor(async () => (await stats()).total === 1, 5000, 'đếm file');
+  await waitFor(async () => !(await hasJob()), 3000, 'xong việc');
+  await noOverlay();
   await expectCount(1);
   assert.match(page.url(), /\/download$/); // Không tự chuyển trang
   console.log('✔ 1. Pre-Crop OK → chờ xử lý → DOWNLOAD → trang Download → Download');
@@ -104,7 +107,7 @@ async function drop(page, name) {
   await drop(page, 'small-cancel.png');
   await page.waitForURL(/\/images\/[^/]+$/, { timeout: 8000 });
   await page.click('#cancel');
-  await waitFor(async () => /Đã dừng/.test(await toastText()), 3000, 'thông báo dừng');
+  await waitFor(async () => !(await hasJob()), 3000, 'dừng việc');
   await expectCount(2, 5000);
   console.log('✔ 4. Bấm CANCEL thì dừng');
 
@@ -135,8 +138,7 @@ async function drop(page, name) {
   assert.strictEqual(downloads[3], 'next.svg');
   await expectCount(4, 3000);
   assert.strictEqual((await stats()).total, 4);
-  await waitFor(async () => !(await sw.evaluate(() => chrome.storage.session.get(null)
-    .then((s) => Object.keys(s).some((k) => k.startsWith('job:'))))), 3000, 'xoá việc sau khi tải xong');
+  await waitFor(async () => !(await hasJob()), 3000, 'xoá việc sau khi tải xong');
   console.log('✔ 7. Thả ảnh mới trên trang kết quả');
 
   // 7b) Trang không nhận cú bấm của script → tự mở thẳng link của nút DOWNLOAD
