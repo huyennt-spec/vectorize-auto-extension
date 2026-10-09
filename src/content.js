@@ -1,30 +1,37 @@
-// Chạy trên vectorizer.ai: tự bấm OK ở bảng Pre-Crop và tự bấm DOWNLOAD khi có kết quả.
+// Chạy trên trang web: tự bấm OK ở bảng Pre-Crop, tự bấm DOWNLOAD khi có kết quả và
+// bấm tiếp nút Download ở trang tải về.
 //
 // Chỉ tự động khi có "việc" (job): job bắt đầu khi bạn kéo/thả, chọn hoặc dán ảnh,
 // hay khi bảng Pre-Crop hiện ra. Nhờ vậy mở lại ảnh cũ hay tải lại trang sẽ không
 // bị tải trùng. Job lưu trong sessionStorage nên vẫn còn khi trang chuyển sang
-// trang kết quả.
+// trang kết quả. Bạn bấm CANCEL / đóng / Esc thì job dừng.
 (() => {
   'use strict';
-  if (globalThis.__vectorizerAutoLoaded) return;
-  globalThis.__vectorizerAutoLoaded = true;
+  // Script có thể được chèn lại (khi cài/cập nhật extension): dừng bản cũ trước.
+  globalThis.__autoClickStop?.();
+  const ac = new AbortController();
+  const listen = (target, type, fn) => target.addEventListener(type, fn, { capture: true, signal: ac.signal });
 
   const JOB_KEY = 'vectorizerAuto.job';
   const JOB_TTL_MS = 10 * 60 * 1000;     // Bỏ job nếu quá 10 phút chưa có kết quả
   const STABLE_MS = 800;                 // Nút phải sẵn sàng liên tục bấy lâu mới bấm
   const DOWNLOAD_CONFIRM_MS = 30 * 1000; // Chờ file tải về tối đa bấy lâu sau khi bấm
   const MAX_CLICKS = 3;                  // Số lần bấm "Download" tối đa cho mỗi ảnh
-  const RETURN_DELAY_MS = 1500;          // Tải xong chờ bấy lâu rồi quay về trang chính
+  const MAX_PRECROP_CLICKS = 3;          // Bảng Pre-Crop vẫn còn thì bấm OK lại tối đa bấy lần
   const BUSY_MAX_MS = 60 * 1000;         // Bỏ qua dấu hiệu "đang xử lý" nếu kéo dài quá lâu
+  const STOP_COOLDOWN_MS = 2000;         // Vừa bấm dừng thì không tự bấm gì trong bấy lâu
 
   const RX = {
     download: /^(download|tải xuống|tải về)$/,
     ok: /^(ok|đồng ý)$/,
-    precrop: /pre-?\s?crop/i,
+    cancel: /^(cancel|huỷ|hủy|dừng|stop|close|đóng|×|✕|✖)$/,
+    precrop: /pre[\s \-‐-―]?crop/i,
+    precropContext: /pre[\s \-‐-―]?crop|size limit|megapixel/i,
     busy: /^(uploading|vectorizing|processing|loading|đang tải lên|đang xử lý)\b/,
   };
-  const CLICKABLE_SEL =
-    'button, a[href], [role="button"], input[type="button"], input[type="submit"]';
+  const CONTROL_SEL = 'button, a, [role="button"], input[type="button"], input[type="submit"]';
+  const LOOSE_SEL = '[onclick], [class*="btn" i], [class*="button" i]';
+  const ICONISH = 'i, svg, [aria-hidden="true"], [class*="icon" i], [class*="material-symbols" i]';
 
   let settings = { ...VA.DEFAULTS };
   let job = loadJob();
@@ -33,7 +40,7 @@
   let sawNotReady = false; // Đã thấy nút DOWNLOAD biến mất/bị khoá kể từ lúc bắt đầu job
   let precropAttempts = 0;
   let lastPrecropClickAt = 0;
-  let returnTimer = 0;
+  let stoppedAt = 0;
   let toastHost = null;
   let toastBox = null;
   let toastTimer = 0;
@@ -64,7 +71,6 @@
 
   function startJob(name) {
     if (!settings.enabled) return;
-    cancelReturn();
     const dl = findDownloadButton();
     job = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
@@ -79,9 +85,9 @@
     readySince = 0;
     notReadySince = 0;
     sawNotReady = false;
-    precropAttempts = 0;
+    stoppedAt = 0;
     saveJob();
-    toast(`📥 Đã nhận ${job.name}, đang chờ Vectorizer xử lý…`);
+    toast('📥 Đã nhận ảnh');
   }
 
   function finishJob() {
@@ -89,29 +95,55 @@
     saveJob();
   }
 
+  function stopJob() {
+    finishJob();
+    stoppedAt = Date.now();
+    precropAttempts = MAX_PRECROP_CLICKS; // Không bấm OK lại cho bảng đang mở
+    toast('⏹ Đã dừng');
+  }
+
   function filesOf(dt) {
     return dt && dt.files && dt.files.length ? [...dt.files] : [];
   }
 
   // Bắt sự kiện ở pha capture để chạy trước code của trang.
-  window.addEventListener('drop', (e) => {
+  listen(window, 'drop', (e) => {
     const files = filesOf(e.dataTransfer);
     if (files.length) startJob(files[0].name);
-  }, true);
-  window.addEventListener('paste', (e) => {
+  });
+  listen(window, 'paste', (e) => {
     const files = filesOf(e.clipboardData);
     if (files.length) startJob(files[0].name || 'ảnh dán');
-  }, true);
-  document.addEventListener('change', (e) => {
+  });
+  listen(document, 'change', (e) => {
     const t = e.target;
     if (t instanceof HTMLInputElement && t.type === 'file' && t.files && t.files.length) {
       startJob(t.files[0].name);
     }
-  }, true);
+  });
+
+  // Bạn tự bấm CANCEL / đóng (chỉ tính cú bấm thật, không tính cú bấm của extension).
+  listen(document, 'click', (e) => {
+    if (e.isTrusted && job && isStopControl(e.target)) stopJob();
+  });
+  listen(window, 'keydown', (e) => {
+    if (e.isTrusted && job && e.key === 'Escape') stopJob();
+  });
+
+  function isStopControl(target) {
+    for (let n = target, i = 0; n instanceof Element && n !== document.body && i < 6; n = n.parentElement, i++) {
+      const label = norm(n.getAttribute('aria-label') || n.getAttribute('title'));
+      if (RX.cancel.test(label)) return true;
+      if (n.matches(CONTROL_SEL) || n.matches(LOOSE_SEL) || getComputedStyle(n).cursor === 'pointer') {
+        return RX.cancel.test(textOf(n));
+      }
+    }
+    return false;
+  }
 
   // ---------- Tìm & bấm nút ----------
   const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
-  const ICONISH = 'i, svg, [aria-hidden="true"], [class*="icon" i], [class*="material-symbols" i]';
+  const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height; };
 
   // Chữ hiển thị trên nút, bỏ qua icon (vd. icon font kiểu "file_download").
   function textOf(el) {
@@ -127,7 +159,6 @@
     }
     return norm(s);
   }
-  const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height; };
 
   function isVisible(el) {
     if (!el || !el.isConnected) return false;
@@ -151,41 +182,45 @@
     return getComputedStyle(el).pointerEvents !== 'none';
   }
 
-  // Có lớp phủ nào (bảng, màn hình đang xử lý…) đè lên nút không?
+  // Có lớp phủ nào (bảng "Upload / Process / Fetch", nền mờ…) đè lên nút không?
   function isUncovered(el) {
     const r = el.getBoundingClientRect();
     const x = Math.min(Math.max(r.left + r.width / 2, 0), innerWidth - 1);
     const y = Math.min(Math.max(r.top + r.height / 2, 0), innerHeight - 1);
     const top = document.elementFromPoint(x, y);
-    return !top || top === el || el.contains(top);
+    if (!top || top === el || el.contains(top)) return true;
+    // Điểm giữa nút trúng khung bao sát nút (vd. chữ trên nút bỏ qua chuột) vẫn tính là không bị che.
+    for (let n = el.parentElement, i = 0; n && i < 3; n = n.parentElement, i++) if (n === top) return true;
+    return false;
   }
 
   const isReady = (el) => isVisible(el) && isEnabled(el) && isUncovered(el);
 
   function closestClickable(el) {
     for (let n = el, i = 0; n && n !== document.body && i < 6; n = n.parentElement, i++) {
-      if (n.matches(CLICKABLE_SEL) || n.onclick || getComputedStyle(n).cursor === 'pointer') return n;
+      if (n.matches(CONTROL_SEL) || n.matches(LOOSE_SEL) || n.onclick
+        || getComputedStyle(n).cursor === 'pointer') return n;
     }
     return null;
   }
 
-  // Tìm các nút có chữ khớp hoàn toàn với rx; nút lồng nhau chỉ giữ nút ngoài cùng.
+  // Phần tử lồng nhau: chỉ giữ phần tử trong cùng (cú bấm sẽ nổi lên các khung ngoài).
+  const innermost = (list) => list.filter((el) => !list.some((o) => o !== el && el.contains(o)));
+
+  // Tìm các nút có chữ khớp hoàn toàn với rx. Ưu tiên nút thật (<button>, <a>…),
+  // không có mới tìm phần tử trông giống nút (class "btn", con trỏ bàn tay…).
   function findButtons(rx, root = document.body) {
     if (!root) return [];
-    const found = [];
-    for (const el of root.querySelectorAll(CLICKABLE_SEL)) {
-      if (rx.test(textOf(el))) found.push(el);
+    const controls = [...root.querySelectorAll(CONTROL_SEL)].filter((el) => rx.test(textOf(el)));
+    if (controls.length) return innermost(controls);
+    const loose = [...root.querySelectorAll(LOOSE_SEL)].filter((el) => rx.test(textOf(el)));
+    const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let t = tw.nextNode(); t; t = tw.nextNode()) {
+      if (!rx.test(norm(t.nodeValue))) continue;
+      const c = closestClickable(t.parentElement);
+      if (c && !loose.includes(c)) loose.push(c);
     }
-    if (!found.length) {
-      // Dự phòng: nút làm bằng <div>/<span> không có role.
-      const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      for (let t = tw.nextNode(); t; t = tw.nextNode()) {
-        if (!rx.test(norm(t.nodeValue))) continue;
-        const c = closestClickable(t.parentElement);
-        if (c && !found.includes(c)) found.push(c);
-      }
-    }
-    return found.filter((el) => !found.some((o) => o !== el && o.contains(el)));
+    return innermost(loose);
   }
 
   function findDownloadButton() {
@@ -210,8 +245,7 @@
   }
 
   function dlKey(el) {
-    const href = el instanceof HTMLAnchorElement ? el.href : '';
-    return `${location.href}|${href}`;
+    return `${location.href}|${el.closest('a[href]')?.href || ''}`;
   }
 
   function realClick(el) {
@@ -244,28 +278,36 @@
     return null;
   }
 
-  function findOkNear(heading) {
-    // Đi dần lên các khung cha, gặp nút OK nào gần tiêu đề nhất thì lấy.
-    for (let n = heading.parentElement, i = 0; n && i < 15; n = n.parentElement, i++) {
-      const ok = findButtons(RX.ok, n).find(isReady);
-      if (ok) return ok;
-      if (n === document.body) break;
+  function findPrecropOk() {
+    const heading = findPrecropHeading();
+    if (heading) {
+      // Đi dần lên các khung cha, gặp nút OK nào gần tiêu đề nhất thì lấy.
+      for (let n = heading.parentElement, i = 0; n && n !== document.body && i < 15; n = n.parentElement, i++) {
+        const ok = findButtons(RX.ok, n).find(isReady);
+        if (ok) return ok;
+      }
+      return findButtons(RX.ok).find(isReady) || null;
+    }
+    // Không thấy tiêu đề: nhận ra bảng qua nội dung ("Size Limit", "Megapixels"…).
+    for (const ok of findButtons(RX.ok).filter(isReady)) {
+      for (let n = ok.parentElement, i = 0; n && n !== document.body && i < 12; n = n.parentElement, i++) {
+        const text = n.textContent;
+        if (text.length < 5000 && RX.precropContext.test(text)) return ok;
+      }
     }
     return null;
   }
 
   function handlePrecrop() {
-    const heading = findPrecropHeading();
-    if (!heading) { precropAttempts = 0; return; }
-    const ok = findOkNear(heading);
-    if (!ok) return;
+    if (Date.now() - stoppedAt < STOP_COOLDOWN_MS) return;
+    const ok = findPrecropOk();
+    if (!ok) { precropAttempts = 0; return; }
+    if (precropAttempts >= MAX_PRECROP_CLICKS || Date.now() - lastPrecropClickAt < 1500) return;
     if (!job) startJob('ảnh');
-    // Bảng vẫn còn sau khi bấm thì thử lại, tối đa 3 lần.
-    if (precropAttempts >= 3 || Date.now() - lastPrecropClickAt < 1500) return;
     precropAttempts++;
     lastPrecropClickAt = Date.now();
     realClick(ok);
-    toast('✅ Đã tự bấm OK ở bảng Pre-Crop');
+    toast('✅ Đã bấm OK');
   }
 
   // ---------- Bước 2: có kết quả → bấm DOWNLOAD ----------
@@ -301,7 +343,7 @@
       chrome.runtime.sendMessage({ type: 'va:clicked', jobId, name: job.name }).catch(() => {}),
       new Promise((r) => setTimeout(r, 1000)),
     ]);
-    if (!job || job.id !== jobId) return;
+    if (!job || job.id !== jobId) return; // Bạn vừa bấm dừng
     if (!el.isConnected) { // Nút vừa bị vẽ lại → lần sau tìm lại
       Object.assign(job, prev, { clickedKeys: clicked });
       saveJob();
@@ -309,38 +351,75 @@
       return;
     }
     realClick(el);
-    toast(clicked.length ? '⬇️ Đã tự bấm Download ở trang tải về…' : '⬇️ Đã tự bấm DOWNLOAD…');
+    toast('⬇️ Đang tải…');
   }
 
-  // ---------- Bước 3: tải xong → quay về trang chính ----------
-  function scheduleReturn() {
-    cancelReturn();
-    returnTimer = setTimeout(() => {
-      if (job) return; // Bạn đã thả ảnh mới trong lúc chờ
-      location.assign(`${location.origin}/`);
-    }, RETURN_DELAY_MS);
-  }
-
-  function cancelReturn() {
-    clearTimeout(returnTimer);
-    returnTimer = 0;
-  }
-
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (!msg || !job || msg.jobId !== job.id) return;
+  // ---------- Tin nhắn từ background / popup ----------
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (ac.signal.aborted || !msg) return;
+    if (msg.type === 'va:ping') {
+      sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
+      return;
+    }
+    if (msg.type === 'va:debug') {
+      sendResponse(debugReport());
+      return;
+    }
+    if (!job || msg.jobId !== job.id) return;
     if (msg.type === 'va:dlComplete') {
       finishJob();
-      if (settings.enabled && settings.autoReturn) {
-        toast(`✅ Đã tải xong ${msg.filename || ''}. Đang về trang chính để kéo ảnh tiếp…`, 'ok');
-        scheduleReturn();
-      } else {
-        toast(`✅ Đã tải xong ${msg.filename || ''}`, 'ok');
-      }
+      toast('✅ Đã tải xong', 'ok');
     } else if (msg.type === 'va:dlFailed') {
       finishJob();
-      toast(`⚠️ Tải file bị lỗi (${msg.error || 'không rõ'}). Thử bấm DOWNLOAD lại.`, 'warn', 12000);
+      toast('⚠️ Tải lỗi, hãy bấm Download lại', 'warn', 8000);
     }
   });
+
+  // Thông tin để tìm lỗi khi extension không bấm được nút (popup → "Sao chép thông tin lỗi").
+  function debugReport() {
+    const path = (el) => {
+      const parts = [];
+      for (let n = el, i = 0; n && n !== document.documentElement && i < 6; n = n.parentElement, i++) {
+        const cls = typeof n.className === 'string' ? n.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+        parts.unshift(n.tagName.toLowerCase() + (n.id ? `#${n.id}` : '') + (cls ? `.${cls}` : ''));
+      }
+      return parts.join(' > ');
+    };
+    const describe = (el) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return {
+        path: path(el),
+        text: textOf(el).slice(0, 60),
+        rect: [r.left, r.top, r.width, r.height].map(Math.round),
+        visible: isVisible(el),
+        enabled: isEnabled(el),
+        uncovered: isUncovered(el),
+        topAtCenter: top ? path(top) : null,
+        html: el.outerHTML.replace(/\s+/g, ' ').slice(0, 300),
+      };
+    };
+    const cropTexts = [];
+    const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let t = tw.nextNode(); t && cropTexts.length < 5; t = tw.nextNode()) {
+      if (/crop/i.test(t.nodeValue)) cropTexts.push(norm(t.nodeValue).slice(0, 60));
+    }
+    return {
+      version: chrome.runtime.getManifest().version,
+      page: location.pathname,
+      iframes: document.querySelectorAll('iframe').length,
+      shadowHosts: [...document.querySelectorAll('*')].filter((el) => el.shadowRoot).length,
+      settings,
+      job,
+      precropHeading: describe(findPrecropHeading()),
+      precropOk: describe(findPrecropOk()),
+      cropTexts,
+      ok: findButtons(RX.ok).slice(0, 4).map(describe),
+      cancel: findButtons(RX.cancel).slice(0, 4).map(describe),
+      download: findButtons(RX.download).slice(0, 4).map(describe),
+    };
+  }
 
   // ---------- Vòng lặp ----------
   function tick() {
@@ -349,19 +428,22 @@
     if (settings.autoPrecrop) handlePrecrop();
     if (job && job.stage === 'downloading' && Date.now() - job.clickedAt > DOWNLOAD_CONFIRM_MS) {
       finishJob();
-      toast('⚠️ Đã bấm DOWNLOAD nhưng chưa thấy file về. Xem biểu tượng tải xuống của trình duyệt '
-        + '(có thể đang hỏi "Cho phép tải nhiều tệp").', 'warn', 12000);
+      toast('⚠️ Chưa thấy file về', 'warn', 8000);
     }
     if (job && settings.autoDownload) handleDownload();
   }
 
+  function stop() {
+    ac.abort();
+    clearInterval(interval);
+    observer.disconnect();
+    toastHost?.remove();
+  }
+  globalThis.__autoClickStop = stop;
+
   function safeTick() {
-    if (!chrome.runtime?.id) { // Extension vừa được cập nhật/tắt → dừng script cũ
-      clearInterval(interval);
-      observer.disconnect();
-      return;
-    }
-    try { tick(); } catch (e) { console.debug('[Vectorizer Auto]', e); }
+    if (!chrome.runtime?.id) return stop(); // Extension vừa được cập nhật/gỡ → dừng bản cũ
+    try { tick(); } catch (e) { console.debug('[Auto Click]', e); }
   }
 
   let scheduled = false;
@@ -376,11 +458,12 @@
   const interval = setInterval(safeTick, 700);
 
   // ---------- Thông báo nhỏ trên trang ----------
-  function toast(msg, kind = 'info', ms = 5000) {
+  function toast(msg, kind = 'info', ms = 3000) {
     if (!settings.showToast) return;
     if (!toastHost || !toastHost.isConnected) {
+      document.getElementById('ac-toast')?.remove();
       toastHost = document.createElement('div');
-      toastHost.id = 'vectorizer-auto-toast';
+      toastHost.id = 'ac-toast';
       toastHost.style.cssText = 'all:initial;position:fixed;left:16px;bottom:16px;'
         + 'z-index:2147483647;pointer-events:none;';
       const root = toastHost.attachShadow({ mode: 'open' });
@@ -394,7 +477,7 @@
       toastBox = root.querySelector('.t');
       document.documentElement.appendChild(toastHost);
     }
-    toastBox.textContent = `Vectorizer Auto: ${msg}`;
+    toastBox.textContent = msg;
     toastBox.className = `t show ${kind}`;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toastBox.classList.remove('show'), ms);

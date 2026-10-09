@@ -9,8 +9,10 @@
   .modal .img{flex:1;background:#eee}
   .modal .side{width:300px;padding:12px;position:relative}
   .modal .actions{position:absolute;right:10px;bottom:10px}
-  .modal button{text-transform:uppercase;padding:10px 24px;border-radius:30px;border:0}
+  .footer{position:fixed;left:440px;top:420px;background:#fff;padding:8px;border-radius:8px}
+  .footer .btn{display:inline-block;text-transform:uppercase;padding:10px 24px;border-radius:30px;cursor:default}
   #ok{background:#3b82f6;color:#fff}
+  .x{position:absolute;right:8px;top:4px}
 </style></head>
 <body>
   <nav><a href="/pricing">Pricing</a><a href="/api">API</a></nav>
@@ -22,11 +24,14 @@
     <div class="modal">
       <div class="img"></div>
       <div class="side">
-        <h2>Pre-Crop</h2>
+        <span class="x" aria-label="Close">×</span>
+        <h2>Pre‑Crop</h2>
         <p>Your image size exceeds the size limit. For best results, please crop the image.</p>
-        <div class="actions"><button id="cancel">Cancel</button> <button id="ok">Ok</button></div>
+        <h3>Size Limit 3 megapixels</h3>
       </div>
     </div>
+    <!-- Nút nằm ngoài khung bảng, là <a> không có href, chữ bên trong bỏ qua chuột -->
+    <div class="footer"><a class="btn" id="cancel">Cancel</a> <a class="btn" id="ok"><span style="pointer-events:none">Ok</span></a></div>
   </div>
 <script>
   let current = null;

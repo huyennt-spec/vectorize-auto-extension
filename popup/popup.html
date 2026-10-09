@@ -2,13 +2,13 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8">
-  <title>Vectorizer Auto Click</title>
+  <title>Auto Click</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header>
     <img src="../icons/icon32.png" alt="" width="24" height="24">
-    <h1>Vectorizer Auto Click</h1>
+    <h1>Auto Click</h1>
   </header>
 
   <label class="row main">
@@ -26,22 +26,20 @@
       <input type="checkbox" id="autoDownload">
     </label>
     <label class="row">
-      <span>Tải xong tự về trang chính để kéo ảnh tiếp</span>
-      <input type="checkbox" id="autoReturn">
-    </label>
-    <label class="row">
       <span>Hiện thông báo nhỏ trên trang</span>
       <input type="checkbox" id="showToast">
     </label>
   </fieldset>
+
+  <div class="status" id="status">Đang kiểm tra trang…</div>
 
   <section class="stats">
     <div><span id="today">0</span> file hôm nay · <span id="total">0</span> file tổng</div>
     <div class="last" id="last"></div>
   </section>
 
-  <button id="open">Mở Vectorizer.AI</button>
-  <p class="hint">Chỉ cần kéo ảnh vào trang Vectorizer.AI, phần còn lại extension tự làm.</p>
+  <p class="hint">Chỉ cần kéo ảnh vào, phần còn lại tự làm. Bấm CANCEL hoặc Esc để dừng.</p>
+  <button id="debug" class="link" hidden>Sao chép thông tin lỗi</button>
 
   <script src="../src/shared.js"></script>
   <script src="popup.js"></script>

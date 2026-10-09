@@ -8,7 +8,10 @@
   #progress{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.8)}
   #dl{position:fixed;left:40%;bottom:30px;padding:14px 34px;border-radius:30px;background:#3b82f6;color:#fff;
       text-transform:uppercase;text-decoration:none;font-weight:bold}
-  #dl.disabled{opacity:.5;pointer-events:none}
+  #backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4)}
+  #modal{position:fixed;left:30%;top:60px;width:280px;background:#fff;padding:16px;border-radius:8px}
+  #modal .bar{height:10px;background:#3b82f6;margin:4px 0 12px}
+  #modal button{background:#c62828;color:#fff;border:0;border-radius:20px;padding:8px 20px;text-transform:uppercase}
 </style></head>
 <body>
   <div class="toolbar">
@@ -17,19 +20,32 @@
     <a href="/" id="close">X</a>
   </div>
   <div id="canvas"><span>Vectorizer.AI Result</span><div id="progress"><span id="ptext">Vectorizing...</span></div></div>
-  <a id="dl" class="disabled" aria-disabled="true" href="#"><i class="material-icons">file_download</i> <span>Download</span></a>
+  <div id="busy" hidden>
+    <div id="backdrop"></div>
+    <div id="modal">Upload<div class="bar"></div>Process<div class="bar" style="width:20%"></div>Fetch<div class="bar" style="width:0"></div>
+      <button id="cancel">Cancel</button></div>
+  </div>
+  <a id="dl" href="#"><i class="material-icons">file_download</i> <span>Download</span></a>
 <script>
   const dl = document.getElementById('dl');
   const id = location.pathname.split('/').pop();
+  // Đang xử lý: bảng Upload / Process / Fetch và nền mờ che nút DOWNLOAD (như web thật).
+  let timer = 0;
   function process(newId, ms) {
-    dl.classList.add('disabled'); dl.setAttribute('aria-disabled', 'true');
+    document.getElementById('busy').hidden = false;
     document.getElementById('progress').style.display = 'flex';
-    setTimeout(() => {
+    timer = setTimeout(() => {
+      document.getElementById('busy').hidden = true;
       document.getElementById('progress').style.display = 'none';
       dl.href = '/images/' + newId + '/download';
-      dl.classList.remove('disabled'); dl.removeAttribute('aria-disabled');
     }, ms);
   }
+  // Bấm CANCEL: đóng bảng; nút DOWNLOAD vẫn bấm được (trường hợp xấu nhất).
+  document.getElementById('cancel').addEventListener('click', () => {
+    clearTimeout(timer);
+    document.getElementById('busy').hidden = true;
+    dl.href = '/images/' + id + '/download';
+  });
   process(id, 2000);
   // Thả ảnh mới ngay trên trang kết quả: xử lý tại chỗ, không chuyển trang.
   document.addEventListener('dragover', (e) => e.preventDefault());

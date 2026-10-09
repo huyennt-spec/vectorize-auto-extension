@@ -23,7 +23,37 @@ chrome.storage.local.get('stats').then(({ stats = {} }) => {
   }
 });
 
-document.getElementById('open').addEventListener('click', () => {
-  chrome.tabs.create({ url: 'https://vectorizer.ai/' });
-  window.close();
-});
+// Trạng thái trên trang đang mở (cửa sổ hiện tại). Chưa chạy thì chèn script ngay.
+const statusEl = document.getElementById('status');
+const debugBtn = document.getElementById('debug');
+const { matches: PAGE_PATTERNS, js: CONTENT_FILES } = chrome.runtime.getManifest().content_scripts[0];
+const ask = (tabId, msg) => chrome.tabs.sendMessage(tabId, msg).catch(() => null);
+
+function setStatus(text, cls) {
+  statusEl.textContent = text;
+  statusEl.className = `status ${cls}`;
+}
+
+(async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [onPage] = tab ? await chrome.tabs.query({ url: PAGE_PATTERNS, windowId: tab.windowId, active: true }) : [];
+  if (!onPage) return setStatus('Mở trang làm việc rồi bấm lại icon này để xem trạng thái.', '');
+  let pong = await ask(tab.id, { type: 'va:ping' });
+  if (!pong) {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: CONTENT_FILES }).catch(() => {});
+    pong = await ask(tab.id, { type: 'va:ping' });
+  }
+  if (!pong) return setStatus('✗ Chưa chạy được trên trang này. Hãy tải lại trang (F5).', 'off');
+  setStatus('✓ Đang chạy trên trang này', 'on');
+  debugBtn.hidden = false;
+  debugBtn.addEventListener('click', async () => {
+    const report = await ask(tab.id, { type: 'va:debug' });
+    const text = JSON.stringify(report, null, 1);
+    try {
+      await navigator.clipboard.writeText(text);
+      debugBtn.textContent = 'Đã chép, dán gửi cho người hỗ trợ';
+    } catch {
+      debugBtn.textContent = 'Không chép được';
+    }
+  });
+})();

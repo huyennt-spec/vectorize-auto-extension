@@ -22,6 +22,18 @@ async function getState() {
 
 const basename = (p) => (p || '').split(/[\\/]/).pop();
 
+// Khi vừa cài/cập nhật extension: chèn script vào các trang đang mở sẵn (kể cả cửa sổ app),
+// để không phải đóng app mở lại.
+const PAGE_PATTERNS = chrome.runtime.getManifest().content_scripts[0].matches;
+const CONTENT_FILES = chrome.runtime.getManifest().content_scripts[0].js;
+
+chrome.runtime.onInstalled.addListener(async () => {
+  const tabs = await chrome.tabs.query({ url: PAGE_PATTERNS });
+  for (const tab of tabs) {
+    chrome.scripting.executeScript({ target: { tabId: tab.id }, files: CONTENT_FILES }).catch(() => {});
+  }
+});
+
 function notifyTab(tabId, msg) {
   chrome.tabs.sendMessage(tabId, msg).catch(() => {});
 }

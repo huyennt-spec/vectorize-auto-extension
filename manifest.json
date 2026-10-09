@@ -1,22 +1,36 @@
 {
   "manifest_version": 3,
-  "name": "Vectorizer Auto Click",
-  "version": "1.1.0",
-  "description": "Kéo ảnh vào Vectorizer.AI là xong: tự bấm OK ở bảng Pre-Crop, tự bấm DOWNLOAD và nút Download ở trang tải về.",
+  "name": "Auto Click",
+  "version": "1.2.0",
+  "description": "Kéo ảnh vào là xong: tự bấm OK và Download, tải file về máy.",
   "minimum_chrome_version": "102",
-  "permissions": ["storage", "downloads"],
+  "permissions": [
+    "storage",
+    "downloads",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://vectorizer.ai/*",
+    "https://*.vectorizer.ai/*"
+  ],
   "background": {
     "service_worker": "src/background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://vectorizer.ai/*", "https://*.vectorizer.ai/*"],
-      "js": ["src/shared.js", "src/content.js"],
+      "matches": [
+        "https://vectorizer.ai/*",
+        "https://*.vectorizer.ai/*"
+      ],
+      "js": [
+        "src/shared.js",
+        "src/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "action": {
-    "default_title": "Vectorizer Auto Click",
+    "default_title": "Auto Click",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

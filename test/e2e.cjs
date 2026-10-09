@@ -59,32 +59,55 @@ async function drop(page, name) {
   if (!sw) sw = await context.waitForEvent('serviceworker');
   const setSettings = (s) => sw.evaluate((v) => chrome.storage.sync.set(v), s);
   const stats = () => sw.evaluate(() => chrome.storage.local.get('stats').then((r) => r.stats || {}));
+  const askTab = (msg) => sw.evaluate(async (m) => {
+    const [tab] = await chrome.tabs.query({ url: 'https://vectorizer.ai/*' });
+    return chrome.tabs.sendMessage(tab.id, m);
+  }, msg);
 
   const page = await context.newPage();
   page.on('download', (d) => downloads.push(d.suggestedFilename()));
-  page.on('console', (m) => { if (/Vectorizer Auto/.test(m.text())) console.log('  [page]', m.text()); });
-  const toastText = () => page.evaluate(() => document.getElementById('vectorizer-auto-toast')
+  page.on('console', (m) => { if (/Auto Click/.test(m.text())) console.log('  [page]', m.text()); });
+  const toastText = () => page.evaluate(() => document.getElementById('ac-toast')
     ?.shadowRoot.querySelector('.t').textContent || '');
+  const expectCount = async (n, ms = 4000) => { await sleep(ms); assert.strictEqual(downloads.length, n); };
 
-  // 1) Ảnh lớn: tự bấm OK ở Pre-Crop → tự bấm DOWNLOAD → tự về trang chính
+  // 1) Ảnh lớn: OK ở Pre-Crop → chờ Upload/Process/Fetch → DOWNLOAD → trang Download → Download
   await page.goto(HOME);
   await sleep(500);
   await drop(page, 'big-tim-anh.png');
   await page.waitForURL(/\/images\/[^/]+$/, { timeout: 8000 });
-  await page.waitForURL(/\/download$/, { timeout: 8000 });
+  assert.ok(await page.isVisible('#modal'), 'bảng Upload/Process/Fetch phải đang hiện');
+  await page.waitForURL(/\/download$/, { timeout: 10000 });
   await waitFor(() => downloads.length === 1, 15000, 'tải file 1');
   assert.strictEqual(downloads[0], 'big-tim-anh.svg');
-  await page.waitForURL(HOME, { timeout: 8000 });
+  await waitFor(async () => /Đã tải xong/.test(await toastText()), 5000, 'thông báo tải xong');
   assert.strictEqual((await stats()).total, 1);
-  console.log('✔ 1. Pre-Crop OK → DOWNLOAD → trang Download → Download → về trang chính');
+  await expectCount(1);
+  assert.match(page.url(), /\/download$/); // Không tự chuyển trang
+  console.log('✔ 1. Pre-Crop OK → chờ xử lý → DOWNLOAD → trang Download → Download');
 
-  // 2) Mở lại trang kết quả cũ (không có job) → không được tải trùng
+  // 2) Kéo ảnh mới thẳng vào trang Download → tự làm tiếp ảnh mới
+  await drop(page, 'tiep-theo.png');
+  await waitFor(() => downloads.length === 2, 15000, 'tải file 2');
+  assert.strictEqual(downloads[1], 'tiep-theo.svg');
+  console.log('✔ 2. Kéo ảnh mới vào trang Download');
+
+  // 3) Mở lại trang kết quả cũ (không có job) → không được tải trùng
   await page.goto(`${HOME}images/123-old.png`);
-  await sleep(5000);
-  assert.strictEqual(downloads.length, 1);
-  console.log('✔ 2. Mở ảnh cũ không tự tải');
+  await expectCount(2, 5000);
+  console.log('✔ 3. Mở ảnh cũ không tự tải');
 
-  // 3) Tắt "tự bấm OK" → bảng Pre-Crop phải còn nguyên
+  // 4) Bấm CANCEL lúc đang xử lý → dừng, không tự bấm DOWNLOAD nữa
+  await page.goto(HOME);
+  await sleep(500);
+  await drop(page, 'small-cancel.png');
+  await page.waitForURL(/\/images\/[^/]+$/, { timeout: 8000 });
+  await page.click('#cancel');
+  await waitFor(async () => /Đã dừng/.test(await toastText()), 3000, 'thông báo dừng');
+  await expectCount(2, 5000);
+  console.log('✔ 4. Bấm CANCEL thì dừng');
+
+  // 5) Tắt "tự bấm OK" → bảng Pre-Crop phải còn nguyên
   await setSettings({ autoPrecrop: false });
   await page.goto(HOME);
   await sleep(500);
@@ -93,42 +116,52 @@ async function drop(page, name) {
   assert.ok(await page.isVisible('#pre h2'));
   assert.ok(!(await page.evaluate(() => window.__okDown)));
   await setSettings({ autoPrecrop: true });
-  console.log('✔ 3. Tắt tự bấm OK thì không bấm');
+  console.log('✔ 5. Tắt tự bấm OK thì không bấm');
 
-  // 4) Ảnh nhỏ, tắt "tự về trang chính" → tải xong vẫn ở trang kết quả
-  await setSettings({ autoReturn: false });
+  // 6) Ảnh nhỏ (không có Pre-Crop)
   await page.goto(HOME);
   await sleep(500);
   await drop(page, 'small.png');
-  await page.waitForURL(/\/images\//, { timeout: 8000 });
-  await waitFor(() => downloads.length === 2, 15000, 'tải file 2');
-  assert.strictEqual(downloads[1], 'small.svg');
-  await sleep(3000);
-  assert.match(page.url(), /\/download$/);
-  assert.match(await toastText(), /Đã tải xong/);
-  console.log('✔ 4. Ảnh nhỏ tải được, không tự về khi đã tắt');
-
-  // 5) Thả ảnh mới ngay trên trang kết quả (xử lý tại chỗ) → tải ảnh mới, không tải lại ảnh cũ
-  await page.goto(`${HOME}images/456-small.png`);
-  await sleep(3500); // Nút DOWNLOAD của ảnh cũ đã sẵn sàng
-  assert.strictEqual(downloads.length, 2);
-  await drop(page, 'next.png');
   await waitFor(() => downloads.length === 3, 15000, 'tải file 3');
-  assert.strictEqual(downloads[2], 'next.svg');
-  await sleep(3000);
-  assert.strictEqual(downloads.length, 3);
-  assert.strictEqual((await stats()).total, 3);
-  console.log('✔ 5. Thả ảnh mới trên trang kết quả');
+  assert.strictEqual(downloads[2], 'small.svg');
+  console.log('✔ 6. Ảnh nhỏ không có Pre-Crop');
 
-  // 6) Tắt extension → không bấm gì
-  await setSettings({ enabled: false, autoReturn: true });
+  // 7) Thả ảnh mới ngay trên trang kết quả (xử lý tại chỗ) → tải ảnh mới, không tải lại ảnh cũ
+  await page.goto(`${HOME}images/456-small.png`);
+  await expectCount(3, 3500); // Nút DOWNLOAD của ảnh cũ đã sẵn sàng nhưng không bấm
+  await drop(page, 'next.png');
+  await waitFor(() => downloads.length === 4, 15000, 'tải file 4');
+  assert.strictEqual(downloads[3], 'next.svg');
+  await expectCount(4, 3000);
+  assert.strictEqual((await stats()).total, 4);
+  console.log('✔ 7. Thả ảnh mới trên trang kết quả');
+
+  // 8) Popup hỏi trạng thái / thông tin lỗi
+  assert.ok((await askTab({ type: 'va:ping' })).ok);
+  const report = await askTab({ type: 'va:debug' });
+  assert.ok(Array.isArray(report.download) && report.page);
+  console.log('✔ 8. Trạng thái và thông tin lỗi');
+
+  // 9) Chèn script lần nữa (như lúc cài/cập nhật) → vẫn chỉ một bản chạy, không tải đôi
+  await page.goto(HOME);
+  await sleep(500);
+  await sw.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ url: 'https://vectorizer.ai/*' });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/shared.js', 'src/content.js'] });
+  });
+  await drop(page, 'big-reinject.png');
+  await waitFor(() => downloads.length === 5, 15000, 'tải file 5');
+  await expectCount(5, 4000);
+  console.log('✔ 9. Chèn script lại không bị chạy đôi');
+
+  // 10) Tắt extension → không bấm gì
+  await setSettings({ enabled: false });
   await page.goto(HOME);
   await sleep(500);
   await drop(page, 'small-off.png');
   await page.waitForURL(/\/images\//, { timeout: 8000 });
-  await sleep(5000);
-  assert.strictEqual(downloads.length, 3);
-  console.log('✔ 6. Tắt extension thì không bấm');
+  await expectCount(5, 5000);
+  console.log('✔ 10. Tắt extension thì không bấm');
 
   await context.close();
   console.log('Tất cả đều qua.');

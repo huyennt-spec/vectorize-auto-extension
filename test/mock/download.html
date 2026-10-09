@@ -32,5 +32,17 @@
   const id = location.pathname.split('/')[2];
   document.getElementById('name').textContent = decodeURIComponent(id.split('-').slice(1).join('-'));
   for (const a of document.querySelectorAll('a.btn')) a.href = '/download/' + id;
+  // Kéo ảnh mới vào trang này: web tự nhận và xử lý ảnh mới.
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    location.href = '/images/' + Date.now() + '-' + encodeURIComponent(e.dataTransfer.files[0].name);
+  });
+  // Kéo ảnh mới vào trang này: web tự nhận và xử lý ảnh mới.
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    location.href = '/images/' + Date.now() + '-' + encodeURIComponent(e.dataTransfer.files[0].name);
+  });
 </script>
 </body></html>
