@@ -28,21 +28,35 @@
     <div class="formats"><div class="fmt sel">General use (default)</div><div class="fmt">Easy editing</div></div>
     <p><a class="btn" id="bottom" href="#" style="font-size:14px;padding:8px 16px">Download</a></p>
   </div>
+  <div id="pre" hidden style="position:fixed;inset:0;background:rgba(0,0,0,.4)">
+    <div style="background:#fff;margin:60px auto;width:400px;padding:20px">
+      <h2>Pre-Crop</h2><p>Your image size exceeds the size limit.</p>
+      <button id="cancel">Cancel</button> <button id="ok">OK</button>
+    </div>
+  </div>
 <script>
   const id = location.pathname.split('/')[2];
   document.getElementById('name').textContent = decodeURIComponent(id.split('-').slice(1).join('-'));
   for (const a of document.querySelectorAll('a.btn')) a.href = '/download/' + id;
-  // Kéo ảnh mới vào trang này: web tự nhận và xử lý ảnh mới.
+  // Kéo ảnh mới vào trang này: web tự nhận và xử lý ảnh mới. Ảnh lớn: bảng Pre-Crop, bấm OK
+  // xong web mất 2,5 giây thu nhỏ ảnh, trong lúc đó nút Download của ảnh cũ vẫn bấm được.
+  let next = null;
+  const go = () => { location.href = '/images/' + Date.now() + '-' + encodeURIComponent(next); };
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => {
     e.preventDefault();
-    location.href = '/images/' + Date.now() + '-' + encodeURIComponent(e.dataTransfer.files[0].name);
+    next = e.dataTransfer.files[0].name;
+    if (/big/.test(next)) {
+      // Như web thật: bảng hiện ra nhưng phải tải xong ảnh lớn thì OK mới bấm được.
+      const ok = document.getElementById('ok');
+      ok.disabled = true;
+      document.getElementById('pre').hidden = false;
+      setTimeout(() => { ok.disabled = false; }, 1500);
+    } else go();
   });
-  // Kéo ảnh mới vào trang này: web tự nhận và xử lý ảnh mới.
-  document.addEventListener('dragover', (e) => e.preventDefault());
-  document.addEventListener('drop', (e) => {
-    e.preventDefault();
-    location.href = '/images/' + Date.now() + '-' + encodeURIComponent(e.dataTransfer.files[0].name);
+  document.getElementById('ok').addEventListener('click', () => {
+    document.getElementById('pre').hidden = true;
+    setTimeout(go, 2500);
   });
 </script>
 </body></html>

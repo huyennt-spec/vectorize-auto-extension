@@ -48,9 +48,8 @@
   let jobLoaded = false;     // Đã lấy xong việc đang làm của tab này từ background
   const startedAt = Date.now();
   let readySince = 0;      // Lúc nút DOWNLOAD bắt đầu sẵn sàng
-  let notReadySince = 0;   // Lúc nút DOWNLOAD bắt đầu không sẵn sàng
   let coveredSince = 0;    // Lúc nút DOWNLOAD bắt đầu "có vẻ bị che"
-  let sawNotReady = false; // Đã thấy nút DOWNLOAD biến mất/bị khoá kể từ lúc bắt đầu job
+  let history = [];        // Các nút Download đã bấm ở tab này (mọi ảnh trước) → không bấm lại
   let precropAttempts = 0;
   let lastPrecropClickAt = 0;
   let stoppedAt = 0;
@@ -77,6 +76,7 @@
   // Việc đang làm được lưu ở background theo tab, nên vẫn còn khi trang chuyển đi.
   const hello = chrome.runtime.sendMessage({ type: 'va:hello' }).then((r) => {
     tab = { tabId: r.tabId, bootId: r.bootId };
+    history = [...new Set([...(r.history || []), ...history])];
     if (jobLoaded) return; // Trong lúc chờ bạn đã thả ảnh mới
     jobLoaded = true;
     if (r.job && Date.now() - r.job.startedAt < JOB_TTL_MS) job = r.job;
@@ -91,23 +91,21 @@
   function startJob(name) {
     if (!settings.enabled) return;
     jobLoaded = true;
-    const dl = findDownloadButton();
     job = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
       name: name || 'ảnh',
       startedAt: Date.now(),
-      // Nếu thả ảnh mới ngay trên trang kết quả cũ thì nút DOWNLOAD cũ đang hiện:
-      // nhớ lại để không bấm nhầm nút của ảnh trước.
-      startDlKey: dl && isReady(dl) ? dlKey(dl) : null,
+      // Thả ảnh mới ngay trên trang kết quả / trang Download của ảnh cũ thì nút của ảnh cũ
+      // vẫn còn đó (lúc bảng Pre-Crop đóng, lúc web đang thu nhỏ ảnh…): ghi lại hết để
+      // không bao giờ bấm nhầm nút của ảnh trước.
+      oldKeys: findButtons(RX.download).map(dlKey),
       stage: 'waiting',  // 'waiting' → chờ kết quả, 'downloading' → đã bấm, chờ file về
       clickedKeys: [],   // Các nút Download đã bấm (trang kết quả, trang Download…)
       last: null,        // Lần bấm gần nhất: { url, href, at, fallback }
       dlStarted: false,  // Trình duyệt đã bắt đầu tải file
     };
     readySince = 0;
-    notReadySince = 0;
     coveredSince = 0;
-    sawNotReady = false;
     progressAt = Date.now();
     stoppedAt = 0;
     busyAfterStop = false;
@@ -433,9 +431,17 @@
     return cands.find((el) => isEnabled(el) && isUncovered(el)) || cands[0] || null;
   }
 
+  // Nút được nhận diện theo đường dẫn trang + đường dẫn của nút (mỗi ảnh có đường dẫn riêng).
+  // Bỏ phần sau dấu ? và # để mã ngẫu nhiên trong link không làm nút cũ thành "mới".
   function dlKey(el) {
-    return `${location.href}|${el.closest('a[href]')?.href || ''}`;
+    const href = el.closest('a[href]')?.href;
+    let target = '';
+    try { if (href) target = new URL(href).pathname; } catch {}
+    return `${location.pathname}|${target}`;
   }
+
+  // Nút của ảnh trước (đã bấm rồi, hoặc đã có sẵn lúc bạn kéo ảnh này vào).
+  const isOldKey = (key) => history.includes(key) || (job?.oldKeys || []).includes(key);
 
   function realClick(el) {
     el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -525,7 +531,7 @@
     const now = Date.now();
     const el = findDownloadButton();
     const busy = scan.busyModal || !!scan.precropHeading;
-    if (el && (!job.startDlKey || job.startDlKey !== dlKey(el) || sawNotReady)) progressAt = now;
+    if (el && !isOldKey(dlKey(el))) progressAt = now;
     const uncovered = !!el && isUncovered(el);
     if (!el || uncovered) coveredSince = 0;
     let wait = false; // Còn phải chờ
@@ -538,29 +544,26 @@
 
     if (wait) {
       readySince = 0;
-      if (!notReadySince) notReadySince = now;
-      if (now - notReadySince > 500) sawNotReady = true;
       return;
     }
-    notReadySince = 0;
     if (!readySince) readySince = now;
     if (now - readySince < STABLE_MS) return;
     if (scan.busyWord && now - readySince < BUSY_MAX_MS) return;
     const key = dlKey(el);
     const clicked = job.clickedKeys || [];
     if (clicked.includes(key) || clicked.length >= MAX_CLICKS) return;
-    // Vẫn là nút DOWNLOAD của ảnh trước → chờ ảnh mới.
-    if (job.startDlKey && job.startDlKey === key && !sawNotReady) return;
+    if (isOldKey(key)) return; // Nút của ảnh trước → chờ kết quả của ảnh mới
 
     const prev = { stage: job.stage, clickedAt: job.clickedAt, last: job.last };
     job.stage = 'downloading';
     job.clickedAt = now;
     job.clickedKeys = [...clicked, key];
+    history = [...history, key].slice(-200);
     job.last = { url: location.href, href: el.closest('a[href]')?.href || '', at: now, fallback: false };
     const jobId = job.id;
     // Báo background (kèm việc đang làm) trước khi bấm, để nó nhận ra file tải về thuộc ảnh này.
     await Promise.race([
-      chrome.runtime.sendMessage({ type: 'va:clicked', job }).catch(() => {}),
+      chrome.runtime.sendMessage({ type: 'va:clicked', job, key }).catch(() => {}),
       new Promise((r) => setTimeout(r, 1000)),
     ]);
     if (!job || job.id !== jobId) return; // Bạn vừa bấm dừng
