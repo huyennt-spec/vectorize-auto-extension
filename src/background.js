@@ -42,6 +42,16 @@ function notifyTab(tabId, msg) {
 // trang có chuyển đi đâu trong cùng cửa sổ thì vẫn nhớ đang chờ tải ảnh nào.
 const jobKey = (tabId) => `job:${tabId}`;
 
+// Mã của lần mở trình duyệt này: ảnh còn sót trong hàng chờ từ lần trước sẽ bị bỏ.
+async function getBootId() {
+  let { bootId } = await chrome.storage.session.get('bootId');
+  if (!bootId) {
+    bootId = crypto.randomUUID();
+    await chrome.storage.session.set({ bootId });
+  }
+  return bootId;
+}
+
 async function setJob(tabId, job) {
   if (job) await chrome.storage.session.set({ [jobKey(tabId)]: job });
   else await chrome.storage.session.remove(jobKey(tabId));
@@ -50,10 +60,17 @@ async function setJob(tabId, job) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabId = sender.tab?.id;
   if (tabId === undefined) return;
-  if (msg?.type === 'va:job:get') {
-    serial(async () => (await chrome.storage.session.get(jobKey(tabId)))[jobKey(tabId)] || null)
-      .then((job) => sendResponse(job), () => sendResponse(null));
+  if (msg?.type === 'va:hello') {
+    serial(async () => ({
+      tabId,
+      bootId: await getBootId(),
+      job: (await chrome.storage.session.get(jobKey(tabId)))[jobKey(tabId)] || null,
+    })).then((r) => sendResponse(r), () => sendResponse({ tabId, bootId: '', job: null }));
     return true;
+  }
+  if (msg?.type === 'va:minimize') {
+    chrome.windows.update(sender.tab.windowId, { state: 'minimized' }).catch(() => {});
+    return;
   }
   if (msg?.type === 'va:job:set') {
     serial(() => setJob(tabId, msg.job)).finally(() => sendResponse({ ok: true }));

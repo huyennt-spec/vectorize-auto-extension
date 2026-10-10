@@ -5,17 +5,26 @@ Extension cho Chrome giúp đỡ phải bấm khi chuyển ảnh sang vector:
 
 ## Extension làm gì
 
-1. Bạn kéo ảnh vào trang (hoặc app đã cài).
+1. Bạn kéo ảnh vào trang (hoặc app đã cài). Cửa sổ **tự thu nhỏ** xuống thanh tác vụ.
 2. Nếu hiện bảng **Pre-Crop** (ảnh lớn hơn giới hạn) → tự bấm **OK**.
 3. Bảng **Upload / Process / Fetch** hiện ra → extension đứng chờ cho xong.
 4. Có kết quả → tự bấm **DOWNLOAD**.
 5. Sang trang **Download** (chọn SVG/PDF…) → tự bấm nút **Download** xanh, file về thư mục
    Tải xuống như khi bạn tự bấm.
 
-Muốn làm ảnh tiếp thì cứ kéo ảnh mới vào, ở trang nào cũng được.
+Muốn làm ảnh tiếp thì cứ kéo ảnh mới vào, ở trang nào cũng được, lúc nào cũng được.
+
+### Kéo nhanh, kéo nhiều ảnh: hàng chờ
+
+Mỗi lúc extension chỉ làm **một ảnh**. Ảnh trước chưa xong mà bạn kéo thêm ảnh, hoặc kéo
+**nhiều ảnh một lúc**, thì các ảnh đó được giữ trong hàng chờ (trang chưa nhận). Ảnh trước tải
+xong, extension tự đưa ảnh tiếp theo vào, lần lượt đúng thứ tự bạn kéo. Nhờ vậy thao tác
+nhanh không bị lẫn ảnh này với ảnh kia.
+
+Bảng bật/tắt (🧩 → **Auto Click**) cho biết còn bao nhiêu ảnh đang chờ.
 
 **Muốn dừng:** bấm **CANCEL** (hoặc nút đóng ×, hoặc phím **Esc**) như bình thường,
-extension sẽ dừng theo và không bấm gì nữa cho ảnh đó.
+extension sẽ dừng ảnh đang làm và **bỏ cả hàng chờ**.
 
 Extension **chạy ngầm**: không hiện thông báo hay nút gì trên trang. Nếu bấm nút mà trang
 không phản ứng, sau vài giây extension tự mở thẳng đường link của nút.
@@ -25,7 +34,7 @@ trang sẽ không tự tải trùng.
 
 ## Cài đặt
 
-1. Tải file `vectorizer-auto-click-v1.4.0.zip` rồi giải nén. Bạn sẽ có thư mục
+1. Tải file `vectorizer-auto-click-v1.5.0.zip` rồi giải nén. Bạn sẽ có thư mục
    `vectorizer-auto-click` (bên trong có file `manifest.json`).
 2. Mở Chrome (cửa sổ bình thường), vào `chrome://extensions`.
 3. Bật **Chế độ dành cho nhà phát triển** (*Developer mode*).
@@ -58,9 +67,12 @@ Giải nén bản mới đè lên thư mục cũ → vào `chrome://extensions` 
 | Bật tự động (tắt hết) | Bật |
 | Tự bấm **OK** ở bảng Pre-Crop | Bật |
 | Tự bấm **DOWNLOAD** khi có kết quả | Bật |
+| Nhận ảnh xong tự thu nhỏ cửa sổ | Bật |
 
-Bảng này còn cho biết extension **có đang chạy trên trang đang mở không**, và đếm số file
-đã tải hôm nay / tổng cộng.
+Cửa sổ chỉ tự thu nhỏ khi mọi bước đều đang bật tự động. Nếu thấy ảnh chỉ chạy tiếp khi mở
+cửa sổ lên, hãy tắt mục thu nhỏ.
+Bảng này còn cho biết extension **có đang chạy trên trang đang mở không**, còn bao nhiêu ảnh
+trong hàng chờ, và đếm số file đã tải hôm nay / tổng cộng.
 
 Định dạng tải về là định dạng đang được chọn ở trang Download (mặc định là SVG).
 Extension không đổi lựa chọn đó.
@@ -78,8 +90,8 @@ Extension không đổi lựa chọn đó.
 ```
 manifest.json       Khai báo extension (Manifest V3)
 src/shared.js       Cài đặt mặc định, dùng chung
-src/content.js      Chạy trên trang: nhận ảnh, bấm OK / DOWNLOAD / Download, dừng khi bấm CANCEL
-src/background.js   Theo dõi file tải về, báo tab khi tải xong, đếm số file, gắn script khi cài
+src/content.js      Chạy trên trang: nhận ảnh, hàng chờ, bấm OK / DOWNLOAD / Download, dừng khi bấm CANCEL
+src/background.js   Nhớ việc từng tab, theo dõi file tải về, thu nhỏ cửa sổ, đếm số file, gắn script khi cài
 popup/              Bảng bật/tắt, trạng thái, sao chép thông tin lỗi
 test/               Trang giả lập + kiểm thử tự động (Playwright)
 ```

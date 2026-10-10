@@ -5,6 +5,9 @@
 // bảng Pre-Crop / bảng Upload-Process-Fetch hiện ra. Nhờ vậy mở lại ảnh cũ hay tải lại
 // trang sẽ không bị tải trùng. Job lưu ở background theo tab nên vẫn còn khi trang chuyển
 // sang trang kết quả. Bạn bấm CANCEL / đóng / Esc thì job dừng.
+//
+// Mỗi lúc chỉ làm một ảnh. Ảnh kéo vào khi ảnh trước chưa xong (hoặc kéo nhiều ảnh một lúc)
+// được giữ trong hàng chờ, xong ảnh trước mới đưa vào trang, nên thao tác nhanh không bị lẫn.
 (() => {
   'use strict';
   // Script có thể được chèn lại (khi cài/cập nhật extension): dừng bản cũ trước.
@@ -21,6 +24,10 @@
   const MAX_CLICKS = 3;                  // Số lần bấm "Download" tối đa cho mỗi ảnh
   const MAX_PRECROP_CLICKS = 3;          // Bảng Pre-Crop vẫn còn thì bấm OK lại tối đa bấy lần
   const STOP_COOLDOWN_MS = 2000;         // Vừa bấm dừng thì không tự bấm gì trong bấy lâu
+  const FEED_STEP_MS = 6000;             // Đưa ảnh từ hàng chờ vào mà trang chưa nhận → thử cách khác
+  const NEXT_DELAY_MS = 1000;            // Xong ảnh trước, chờ bấy lâu rồi mới đưa ảnh tiếp theo
+  const STALL_MS = 30 * 1000;            // Ảnh đang làm đứng yên bấy lâu (trang không làm gì) → bỏ
+  const STALL_ON_DROP_MS = 3000;         // Bạn kéo ảnh mới mà ảnh đang làm đứng yên bấy lâu → bỏ ảnh cũ
 
   const RX = {
     download: /^(download|tải xuống|tải về)$/,
@@ -49,6 +56,15 @@
   let stoppedAt = 0;
   let busyAfterStop = false; // Dừng lúc bảng tiến trình đang hiện → chờ bảng tắt mới nhận việc mới
   let scan = null;           // Kết quả quét chữ trên trang của lượt hiện tại
+  let tab = { tabId: -1, bootId: '' }; // Tab này (để hàng chờ của tab nào tab nấy làm)
+  let queueCount = 0;        // Số ảnh trong hàng chờ của tab này (kể cả ảnh đang làm)
+  let queueLoaded = false;
+  let feedingNow = false;    // Đang tự đưa ảnh vào trang (sự kiện do chính extension tạo)
+  let pumping = false;
+  let feedBusy = false;
+  let idleSince = Date.now();
+  let progressAt = Date.now(); // Lần cuối thấy ảnh đang làm còn tiến triển
+  let minimizeTimer = 0;
 
   // ---------- Cài đặt ----------
   chrome.storage.sync.get(VA.DEFAULTS).then((s) => { settings = s; }).catch(() => {});
@@ -59,12 +75,14 @@
 
   // ---------- Job ----------
   // Việc đang làm được lưu ở background theo tab, nên vẫn còn khi trang chuyển đi.
-  chrome.runtime.sendMessage({ type: 'va:job:get' }).then((j) => {
+  const hello = chrome.runtime.sendMessage({ type: 'va:hello' }).then((r) => {
+    tab = { tabId: r.tabId, bootId: r.bootId };
     if (jobLoaded) return; // Trong lúc chờ bạn đã thả ảnh mới
     jobLoaded = true;
-    if (j && Date.now() - j.startedAt < JOB_TTL_MS) job = j;
-    else if (j) saveJob();
+    if (r.job && Date.now() - r.job.startedAt < JOB_TTL_MS) job = r.job;
+    else if (r.job) saveJob();
   }).catch(() => { jobLoaded = true; });
+  hello.then(refreshQueue);
 
   function saveJob() {
     return chrome.runtime.sendMessage({ type: 'va:job:set', job }).catch(() => {});
@@ -90,42 +108,220 @@
     notReadySince = 0;
     coveredSince = 0;
     sawNotReady = false;
+    progressAt = Date.now();
     stoppedAt = 0;
     busyAfterStop = false;
     saveJob();
   }
 
   function finishJob() {
+    const itemId = job?.itemId;
     job = null;
+    idleSince = Date.now();
     saveJob();
+    if (itemId != null) queueOp(() => qDelete([itemId])).then(refreshQueue);
   }
 
+  // Bạn bấm dừng: bỏ ảnh đang làm và cả hàng chờ.
   function stopJob() {
     finishJob();
+    queueOp(async () => qDelete((await qMine()).map((it) => it.id))).then(refreshQueue);
     stoppedAt = Date.now();
     busyAfterStop = true;
     precropAttempts = MAX_PRECROP_CLICKS; // Không bấm OK lại cho bảng đang mở
   }
 
-  function filesOf(dt) {
-    return dt && dt.files && dt.files.length ? [...dt.files] : [];
+  const filesOf = (dt) => (dt && dt.files && dt.files.length ? [...dt.files] : []);
+  const isImage = (f) => /^image\//.test(f.type) || /\.(png|jpe?g|gif|bmp|webp|tiff?|avif|heic)$/i.test(f.name);
+
+  // Bạn đưa ảnh vào trang. Đang rảnh và chỉ một ảnh → để trang nhận như thường.
+  // Đang làm ảnh khác / còn ảnh chờ / nhiều ảnh một lúc → giữ lại, trang chưa thấy gì.
+  function onUserFiles(e, files, x, y) {
+    if (feedingNow || !settings.enabled) return;
+    const images = files.filter(isImage);
+    if (!images.length) return;
+    // Ảnh đang làm đã đứng yên (vd. bị bỏ dở rồi chuyển trang) → bỏ, nhận ảnh mới luôn.
+    if (job && job.stage === 'waiting' && Date.now() - progressAt > STALL_ON_DROP_MS) finishJob();
+    const busy = !!job || !jobLoaded || !queueLoaded || pumping || queueCount > 0 || images.length > 1;
+    if (busy) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.type === 'drop') clearDragState(e.target);
+      enqueue(images, x, y);
+    } else {
+      startJob(images[0].name);
+    }
+    minimizeSoon();
   }
 
   // Bắt sự kiện ở pha capture để chạy trước code của trang.
-  listen(window, 'drop', (e) => {
-    const files = filesOf(e.dataTransfer);
-    if (files.length) startJob(files[0].name);
-  });
-  listen(window, 'paste', (e) => {
-    const files = filesOf(e.clipboardData);
-    if (files.length) startJob(files[0].name || 'ảnh dán');
-  });
+  listen(window, 'drop', (e) => onUserFiles(e, filesOf(e.dataTransfer), e.clientX, e.clientY));
+  listen(window, 'paste', (e) => onUserFiles(e, filesOf(e.clipboardData)));
   listen(document, 'change', (e) => {
     const t = e.target;
-    if (t instanceof HTMLInputElement && t.type === 'file' && t.files && t.files.length) {
-      startJob(t.files[0].name);
-    }
+    if (t instanceof HTMLInputElement && t.type === 'file') onUserFiles(e, [...(t.files || [])]);
   });
+
+  // Trang có thể đang hiện lớp "thả ảnh vào đây": báo cho trang là đã kéo ra để nó tắt đi.
+  function clearDragState(target) {
+    feedingNow = true;
+    try {
+      for (const el of new Set([target, document.body])) {
+        el?.dispatchEvent(new DragEvent('dragleave', { bubbles: true, cancelable: true, composed: true }));
+      }
+    } finally { feedingNow = false; }
+  }
+
+  // Nhận ảnh xong thì thu nhỏ cửa sổ (chỉ khi mọi bước đều tự động).
+  function minimizeSoon() {
+    if (!settings.minimize || !settings.autoDownload || !settings.autoPrecrop) return;
+    clearTimeout(minimizeTimer);
+    minimizeTimer = setTimeout(() => chrome.runtime.sendMessage({ type: 'va:minimize' }).catch(() => {}), 400);
+  }
+
+  // ---------- Hàng chờ ảnh ----------
+  // Lưu trong IndexedDB của trang (giữ được file lớn, còn nguyên khi trang chuyển đi).
+  let dbPromise = null;
+  function db() {
+    dbPromise ??= new Promise((resolve, reject) => {
+      const r = indexedDB.open('ac-queue', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('files', { keyPath: 'id', autoIncrement: true });
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    return dbPromise;
+  }
+  const txDone = (tx) => new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = tx.onabort = () => reject(tx.error);
+  });
+  async function qAdd(items) {
+    const tx = (await db()).transaction('files', 'readwrite');
+    for (const it of items) tx.objectStore('files').add(it);
+    await txDone(tx);
+  }
+  async function qDelete(ids) {
+    if (!ids.length) return;
+    const tx = (await db()).transaction('files', 'readwrite');
+    for (const id of ids) tx.objectStore('files').delete(id);
+    await txDone(tx);
+  }
+  // Ảnh của tab này theo thứ tự kéo vào; ảnh còn sót từ lần mở trình duyệt trước thì xoá.
+  async function qMine() {
+    const tx = (await db()).transaction('files');
+    const req = tx.objectStore('files').getAll();
+    await txDone(tx);
+    const stale = req.result.filter((it) => it.bootId !== tab.bootId).map((it) => it.id);
+    if (stale.length) await qDelete(stale);
+    return req.result.filter((it) => it.bootId === tab.bootId && it.tabId === tab.tabId).sort((a, b) => a.id - b.id);
+  }
+  // Các thao tác với hàng chờ chạy lần lượt, không chen nhau.
+  let queueChain = Promise.resolve();
+  function queueOp(fn) {
+    const run = queueChain.then(() => hello).then(fn);
+    queueChain = run.catch((e) => console.debug('[Auto Click]', e));
+    return queueChain;
+  }
+  function refreshQueue() {
+    return queueOp(async () => { queueCount = (await qMine()).length; queueLoaded = true; });
+  }
+
+  function enqueue(files, x, y) {
+    queueCount += files.length;
+    queueOp(() => qAdd(files.map((file) => ({
+      tabId: tab.tabId, bootId: tab.bootId, name: file.name, file, x, y, addedAt: Date.now(),
+    })))).then(refreshQueue).then(() => pump());
+  }
+
+  // Rảnh rồi → lấy ảnh đầu hàng chờ đưa vào trang.
+  async function pump() {
+    if (pumping || job || !settings.enabled || !document.body) return;
+    pumping = true;
+    try {
+      let item = null;
+      await queueOp(async () => { [item] = await qMine(); });
+      if (!item || job) return;
+      startJob(item.name);
+      job.itemId = item.id;
+      job.feed = { step: 1, at: Date.now(), url: location.href, ok: false };
+      saveJob();
+      feedDrop(item);
+    } finally {
+      pumping = false;
+    }
+  }
+
+  // Thả ảnh vào trang y như bạn kéo thả (ở đúng chỗ bạn đã thả).
+  function feedDrop(item) {
+    const dt = new DataTransfer();
+    dt.items.add(item.file);
+    const x = Math.min(Math.max(item.x ?? innerWidth / 2, 1), innerWidth - 1);
+    const y = Math.min(Math.max(item.y ?? innerHeight / 2, 1), innerHeight - 1);
+    const fire = (type) => {
+      const target = document.elementFromPoint(x, y) || document.body;
+      feedingNow = true;
+      try {
+        target.dispatchEvent(new DragEvent(type, {
+          bubbles: true, cancelable: true, composed: true, dataTransfer: dt, clientX: x, clientY: y,
+        }));
+      } finally { feedingNow = false; }
+    };
+    fire('dragenter');
+    fire('dragover');
+    setTimeout(() => { fire('dragover'); fire('drop'); }, 200);
+  }
+
+  // Cách khác: chọn ảnh vào ô chọn file của trang.
+  function feedInput(item) {
+    const input = [...document.querySelectorAll('input[type="file"]')].find((i) => !i.disabled);
+    if (!input) return false;
+    const dt = new DataTransfer();
+    dt.items.add(item.file);
+    feedingNow = true;
+    try {
+      input.files = dt.files;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    } finally { feedingNow = false; }
+    return true;
+  }
+
+  // Trang đã nhận ảnh chưa? Chưa thì lần lượt: thả lại → ô chọn file → về trang chủ thử lại → bỏ qua.
+  async function handleFeed() {
+    const f = job.feed;
+    if (!f || f.ok || feedBusy) return;
+    if (scan.precropHeading || scan.busyModal || (f.step !== 3 && location.href !== f.url)) {
+      f.ok = true;
+      saveJob();
+      return;
+    }
+    if (Date.now() - f.at < FEED_STEP_MS) return;
+    feedBusy = true;
+    try {
+      let item = null;
+      await queueOp(async () => { item = (await qMine()).find((it) => it.id === job?.itemId); });
+      if (!job || job.feed !== f) return;
+      if (!item) { finishJob(); return; }
+      f.step++;
+      f.at = Date.now();
+      if (f.step === 2 || f.step === 5) {
+        if (!feedInput(item)) f.at = 0; // Không có ô chọn file → sang bước sau luôn
+        saveJob();
+      } else if (f.step === 3) {
+        f.at = Date.now() - FEED_STEP_MS + 2000; // Về trang chủ rồi thả lại sau 2 giây
+        await saveJob();
+        location.assign(`${location.origin}/`);
+      } else if (f.step === 4) {
+        f.url = location.href;
+        saveJob();
+        feedDrop(item);
+      } else {
+        finishJob(); // Không đưa được ảnh này vào trang → bỏ qua, làm ảnh sau
+      }
+    } finally {
+      feedBusy = false;
+    }
+  }
 
   // Bạn tự bấm CANCEL / đóng (chỉ tính cú bấm thật, không tính cú bấm của extension).
   listen(document, 'click', (e) => {
@@ -329,6 +525,7 @@
     const now = Date.now();
     const el = findDownloadButton();
     const busy = scan.busyModal || !!scan.precropHeading;
+    if (el && (!job.startDlKey || job.startDlKey !== dlKey(el) || sawNotReady)) progressAt = now;
     const uncovered = !!el && isUncovered(el);
     if (!el || uncovered) coveredSince = 0;
     let wait = false; // Còn phải chờ
@@ -391,7 +588,8 @@
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (ac.signal.aborted || !msg) return;
     if (msg.type === 'va:ping') {
-      sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
+      const waiting = Math.max(0, queueCount - (job?.itemId != null ? 1 : 0));
+      sendResponse({ ok: true, version: chrome.runtime.getManifest().version, busy: !!job, waiting });
       return;
     }
     if (msg.type === 'va:debug') {
@@ -447,6 +645,7 @@
       shadowHosts: [...document.querySelectorAll('*')].filter((el) => el.shadowRoot).length,
       settings,
       job,
+      queueCount,
       scan: { precrop: !!scan.precropHeading, busyLabels: [...scan.busyLabels], busyWord: scan.busyWord },
       texts,
       precropOk: describe(findPrecropOk()),
@@ -468,10 +667,18 @@
     if (!job && jobLoaded && scan.busyModal && !busyAfterStop && Date.now() - startedAt > 3000
       && Date.now() - stoppedAt > STOP_COOLDOWN_MS) startJob('ảnh');
     if (job && job.stage === 'downloading' && Date.now() - job.clickedAt > DOWNLOAD_CONFIRM_MS) finishJob();
-    if (job && settings.autoDownload) {
+    // Còn tiến triển: có bảng Pre-Crop / bảng xử lý, đang đưa ảnh vào, đã bấm tải…
+    if (job && (scan.precropHeading || scan.busyModal || job.stage === 'downloading'
+      || (job.feed && !job.feed.ok))) progressAt = Date.now();
+    if (job && job.stage === 'waiting' && Date.now() - progressAt > STALL_MS) finishJob();
+    if (job && job.feed && !job.feed.ok) {
+      handleFeed(); // Chưa chắc trang đã nhận ảnh → chưa bấm gì khác
+    } else if (job && settings.autoDownload) {
       handleFallback();
       handleDownload();
     }
+    if (!job && queueCount > 0 && Date.now() - idleSince > NEXT_DELAY_MS
+      && Date.now() - stoppedAt > STOP_COOLDOWN_MS) pump();
   }
 
   function stop() {
@@ -493,7 +700,7 @@
     scheduled = true;
     setTimeout(() => { scheduled = false; safeTick(); }, 150);
   });
-  observer.observe(document.documentElement, {
+  observer.observe(document, { // Chạy từ lúc trang mới bắt đầu tải (chưa có <html>)
     childList: true, subtree: true, attributes: true, characterData: true,
   });
   const interval = setInterval(safeTick, 700);

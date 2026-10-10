@@ -21,15 +21,17 @@ async function waitFor(fn, ms, what) {
   }
 }
 
-async function drop(page, name) {
-  await page.evaluate((fileName) => {
+async function drop(page, names) {
+  await page.evaluate((fileNames) => {
     const dt = new DataTransfer();
-    dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], fileName, { type: 'image/png' }));
+    for (const fileName of fileNames) {
+      dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], fileName, { type: 'image/png' }));
+    }
     const target = document.getElementById('drop') || document.body;
     for (const type of ['dragenter', 'dragover', 'drop']) {
       target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
     }
-  }, name);
+  }, [].concat(names));
 }
 
 (async () => {
@@ -64,6 +66,8 @@ async function drop(page, name) {
     return chrome.tabs.sendMessage(tab.id, m);
   }, msg);
 
+  await setSettings({ minimize: false }); // Các bài thử khác cần cửa sổ mở
+  const windowStates = () => sw.evaluate(() => chrome.windows.getAll().then((ws) => ws.map((w) => w.state)));
   const page = await context.newPage();
   page.on('download', (d) => downloads.push(d.suggestedFilename()));
   page.on('console', (m) => { if (/Auto Click/.test(m.text())) console.log('  [page]', m.text()); });
@@ -122,9 +126,9 @@ async function drop(page, name) {
   await setSettings({ autoPrecrop: true });
   console.log('✔ 5. Tắt tự bấm OK thì không bấm');
 
-  // 6) Ảnh nhỏ (không có Pre-Crop)
+  // 6) Ảnh nhỏ (không có Pre-Crop). Ảnh ở bước 5 bị bỏ dở → kéo ảnh mới vào là làm ảnh mới luôn.
   await page.goto(HOME);
-  await sleep(500);
+  await sleep(3500);
   await drop(page, 'small.png');
   await waitFor(() => downloads.length === 3, 15000, 'tải file 3');
   assert.strictEqual(downloads[2], 'small.svg');
@@ -184,14 +188,55 @@ async function drop(page, name) {
   await expectCount(8, 4000);
   console.log('✔ 9. Chèn script lại không bị chạy đôi');
 
-  // 10) Tắt extension → không bấm gì
+  // 11) Thao tác nhanh: thả ảnh khi ảnh trước chưa xong, thả nhiều ảnh một lúc → làm lần lượt, không lẫn
+  await page.goto(HOME);
+  await sleep(500);
+  await drop(page, 'q1.png');
+  await sleep(300);
+  await drop(page, ['big-q2.png', 'q3.png']);
+  await sleep(300);
+  await drop(page, 'q4.png');
+  await sleep(500);
+  assert.strictEqual((await askTab({ type: 'va:ping' })).waiting, 3);
+  await waitFor(() => downloads.length === 12, 90000, 'tải hết hàng chờ');
+  assert.deepStrictEqual(downloads.slice(8), ['q1.svg', 'big-q2.svg', 'q3.svg', 'q4.svg']);
+  await expectCount(12, 4000);
+  assert.strictEqual((await askTab({ type: 'va:ping' })).waiting, 0);
+  console.log('✔ 11. Hàng chờ: làm lần lượt từng ảnh, đúng thứ tự');
+
+  // 12) Nhấn Esc → dừng ảnh đang làm và bỏ cả hàng chờ
+  await page.goto(HOME);
+  await sleep(500);
+  await drop(page, 'q5.png');
+  await sleep(300);
+  await drop(page, ['q6.png', 'q7.png']);
+  await page.waitForURL(/\/images\//, { timeout: 8000 });
+  await page.keyboard.press('Escape');
+  await expectCount(12, 8000);
+  assert.strictEqual((await askTab({ type: 'va:ping' })).waiting, 0);
+  console.log('✔ 12. Esc dừng cả hàng chờ');
+
+  // 13) Nhận ảnh xong tự thu nhỏ cửa sổ, vẫn tải xong trong lúc thu nhỏ
+  await setSettings({ minimize: true });
+  await page.goto(HOME);
+  await sleep(500);
+  await drop(page, 'mini.png');
+  await waitFor(async () => (await windowStates()).includes('minimized'), 5000, 'thu nhỏ cửa sổ');
+  await waitFor(() => downloads.length === 13, 30000, 'tải lúc thu nhỏ');
+  assert.strictEqual(downloads[12], 'mini.svg');
+  await sw.evaluate(() => chrome.windows.getAll().then((ws) => Promise.all(
+    ws.map((w) => chrome.windows.update(w.id, { state: 'normal' })))));
+  await setSettings({ minimize: false });
+  console.log('✔ 13. Tự thu nhỏ cửa sổ');
+
+  // 14) Tắt extension → không bấm gì
   await setSettings({ enabled: false });
   await page.goto(HOME);
   await sleep(500);
   await drop(page, 'small-off.png');
   await page.waitForURL(/\/images\//, { timeout: 8000 });
-  await expectCount(8, 5000);
-  console.log('✔ 10. Tắt extension thì không bấm');
+  await expectCount(13, 5000);
+  console.log('✔ 14. Tắt extension thì không bấm');
 
   await context.close();
   console.log('Tất cả đều qua.');

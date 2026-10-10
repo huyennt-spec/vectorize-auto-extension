@@ -44,7 +44,8 @@ function setStatus(text, cls) {
     pong = await ask(tab.id, { type: 'va:ping' });
   }
   if (!pong) return setStatus('✗ Chưa chạy được trên trang này. Hãy tải lại trang (F5).', 'off');
-  setStatus('✓ Đang chạy trên trang này', 'on');
+  const queue = pong.waiting ? ` · ${pong.waiting} ảnh đang chờ` : '';
+  setStatus(`✓ Đang chạy trên trang này${queue}`, 'on');
   debugBtn.hidden = false;
   debugBtn.addEventListener('click', async () => {
     const report = await ask(tab.id, { type: 'va:debug' });

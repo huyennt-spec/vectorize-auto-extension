@@ -4,5 +4,6 @@ globalThis.VA = {
     enabled: true,      // Bật/tắt toàn bộ extension
     autoPrecrop: true,  // Tự bấm OK ở bảng Pre-Crop
     autoDownload: true, // Tự bấm DOWNLOAD khi có kết quả
+    minimize: true,     // Nhận ảnh xong tự thu nhỏ cửa sổ
   },
 };
