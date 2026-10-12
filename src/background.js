@@ -41,8 +41,6 @@ function notifyTab(tabId, msg) {
 // Việc đang làm của từng tab được giữ ở đây (không phụ thuộc bộ nhớ của trang), nên
 // trang có chuyển đi đâu trong cùng cửa sổ thì vẫn nhớ đang chờ tải ảnh nào.
 const jobKey = (tabId) => `job:${tabId}`;
-// Các nút Download đã bấm ở từng tab: không bao giờ bấm lại cho ảnh sau (tránh tải lại ảnh cũ).
-const histKey = (tabId) => `hist:${tabId}`;
 
 // Mã của lần mở trình duyệt này: ảnh còn sót trong hàng chờ từ lần trước sẽ bị bỏ.
 async function getBootId() {
@@ -63,15 +61,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabId = sender.tab?.id;
   if (tabId === undefined) return;
   if (msg?.type === 'va:hello') {
-    serial(async () => {
-      const store = await chrome.storage.session.get([jobKey(tabId), histKey(tabId)]);
-      return {
-        tabId,
-        bootId: await getBootId(),
-        job: store[jobKey(tabId)] || null,
-        history: store[histKey(tabId)] || [],
-      };
-    }).then((r) => sendResponse(r), () => sendResponse({ tabId, bootId: '', job: null }));
+    serial(async () => ({
+      tabId,
+      bootId: await getBootId(),
+      job: (await chrome.storage.session.get(jobKey(tabId)))[jobKey(tabId)] || null,
+    })).then((r) => sendResponse(r), () => sendResponse({ tabId, bootId: '', job: null }));
     return true;
   }
   if (msg?.type === 'va:minimize') {
@@ -86,18 +80,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     serial(async () => {
       const { pending } = await getState();
       pending[tabId] = { at: Date.now(), jobId: msg.job.id, name: msg.job.name };
-      const { [histKey(tabId)]: hist = [] } = await chrome.storage.session.get(histKey(tabId));
-      await chrome.storage.session.set({ pending, [histKey(tabId)]: [...hist, msg.key].slice(-200) });
+      await chrome.storage.session.set({ pending });
       await setJob(tabId, msg.job);
     }).finally(() => sendResponse({ ok: true }));
     return true;
   }
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => serial(async () => {
-  await setJob(tabId, null);
-  await chrome.storage.session.remove(histKey(tabId));
-}));
+chrome.tabs.onRemoved.addListener((tabId) => serial(() => setJob(tabId, null)));
 
 chrome.downloads.onCreated.addListener((item) => serial(async () => {
   const { pending, dlmap } = await getState();

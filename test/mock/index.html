@@ -42,7 +42,10 @@
   }
   function go() {
     document.getElementById('status').textContent = 'Uploading...';
-    setTimeout(() => { location.href = '/images/' + Date.now() + '-' + encodeURIComponent(current.name); }, 500);
+    setTimeout(() => {
+      sessionStorage.setItem('mockFresh', '1'); // Trang kết quả sẽ hiện bảng xử lý (ảnh mới tải lên)
+      location.href = '/images/' + Date.now() + '-' + encodeURIComponent(current.name);
+    }, 500);
   }
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => { e.preventDefault(); upload(e.dataTransfer.files[0]); });

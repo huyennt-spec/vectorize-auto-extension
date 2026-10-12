@@ -75,7 +75,10 @@ async function drop(page, names) {
     .then((s) => Object.keys(s).some((k) => k.startsWith('job:'))));
   const noOverlay = async () => assert.ok(await page.evaluate(() => !document.getElementById('ac-toast')
     && ![...document.querySelectorAll('body *')].some((el) => el.shadowRoot)), 'không được hiện gì trên trang');
-  const expectCount = async (n, ms = 4000) => { await sleep(ms); assert.strictEqual(downloads.length, n); };
+  const expectCount = async (n, ms = 4000) => {
+    await sleep(ms);
+    assert.strictEqual(downloads.length, n, `số file: ${downloads.join(', ')}`);
+  };
 
   // 1) Ảnh lớn: OK ở Pre-Crop → chờ Upload/Process/Fetch → DOWNLOAD → trang Download → Download
   await page.goto(HOME);

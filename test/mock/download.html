@@ -11,6 +11,10 @@
   .formats{display:flex;gap:10px}
   .fmt{border:1px solid #ccc;border-radius:8px;padding:10px 20px;text-align:center;cursor:pointer}
   .fmt.sel{border-color:#3b82f6;background:#eef4ff}
+  /* Chế độ 'fade': thẻ hiện dần bằng hiệu ứng (không chạy khi cửa sổ ẩn), nút khoá tới khi hiệu ứng xong */
+  .card.fade{opacity:0;animation:fadein .6s .3s forwards}
+  .card.fade #main{pointer-events:none}
+  @keyframes fadein{to{opacity:1}}
 </style></head>
 <body>
   <header><a href="/">Vectorizer.AI</a><a href="/api">Developers</a><a href="/pricing">Pricing</a></header>
@@ -35,13 +39,56 @@
     </div>
   </div>
 <script>
-  const id = location.pathname.split('/')[2];
+  // Chế độ thử (test đặt trong localStorage): '' | late | defer | visonly | query | churn | fade
+  const mode = localStorage.getItem('mockMode') || '';
+  const id = new URLSearchParams(location.search).get('img') || location.pathname.split('/')[2];
   document.getElementById('name').textContent = decodeURIComponent(id.split('-').slice(1).join('-'));
-  for (const a of document.querySelectorAll('a.btn')) a.href = '/download/' + id;
+  const fileUrl = '/download/' + id;
+  window.__mainClicks = 0;
+  document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('#main')) window.__mainClicks++; }, true);
+  if (mode === 'late' || mode === 'defer' || mode === 'visonly') {
+    // Như web thật: nút là <a href="#">, script của trang gắn việc cho nút sau; bấm sớm thì hụt (chỉ thêm '#').
+    window.__wire = () => {
+      for (const a of document.querySelectorAll('a.btn')) {
+        a.addEventListener('click', (e) => { e.preventDefault(); location.href = fileUrl; });
+      }
+    };
+    if (mode === 'late') addEventListener('load', () => setTimeout(window.__wire, 2500));
+    // 'visonly': trang chỉ gắn việc cho nút khi cửa sổ đang hiện.
+    if (mode === 'visonly') {
+      if (document.visibilityState === 'visible') window.__wire();
+      else {
+        document.addEventListener('visibilitychange', function onVis() {
+          if (document.visibilityState !== 'visible') return;
+          document.removeEventListener('visibilitychange', onVis);
+          window.__wire();
+        });
+      }
+    }
+    // 'defer': file /assets/dl-wire.js (tải chậm) gọi window.__wire()
+  } else {
+    for (const a of document.querySelectorAll('a.btn')) a.href = fileUrl;
+  }
+  if (mode === 'churn') { // Trang liên tục vẽ lại nút trong 3 giây đầu
+    const end = Date.now() + 3000;
+    const t = setInterval(() => {
+      const m = document.getElementById('main');
+      m.replaceWith(m.cloneNode(true));
+      if (Date.now() > end) clearInterval(t);
+    }, 4);
+  }
+  if (mode === 'fade') {
+    const card = document.querySelector('.card');
+    card.classList.add('fade');
+    card.addEventListener('animationend', () => card.classList.remove('fade'));
+  }
   // Kéo ảnh mới vào trang này: web tự nhận và xử lý ảnh mới. Ảnh lớn: bảng Pre-Crop, bấm OK
   // xong web mất 2,5 giây thu nhỏ ảnh, trong lúc đó nút Download của ảnh cũ vẫn bấm được.
   let next = null;
-  const go = () => { location.href = '/images/' + Date.now() + '-' + encodeURIComponent(next); };
+  const go = () => {
+    sessionStorage.setItem('mockFresh', '1');
+    location.href = '/images/' + Date.now() + '-' + encodeURIComponent(next);
+  };
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => {
     e.preventDefault();

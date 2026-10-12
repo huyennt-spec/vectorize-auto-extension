@@ -26,15 +26,22 @@ Bảng bật/tắt (🧩 → **Auto Click**) cho biết còn bao nhiêu ảnh đ
 **Muốn dừng:** bấm **CANCEL** (hoặc nút đóng ×, hoặc phím **Esc**) như bình thường,
 extension sẽ dừng ảnh đang làm và **bỏ cả hàng chờ**.
 
-Extension **chạy ngầm**: không hiện thông báo hay nút gì trên trang. Nếu bấm nút mà trang
-không phản ứng, sau vài giây extension tự mở thẳng đường link của nút.
+Extension **chạy ngầm**: không hiện thông báo hay nút gì trên trang.
+
+- Chỉ bấm khi trang đã tải xong hẳn (nút của web chỉ chạy được sau khi trang tải xong).
+- Bấm mà trang không phản ứng (bấm hụt) thì vài giây sau bấm lại; nút có link thật thì mở
+  thẳng link đó.
+- Cửa sổ đang thu nhỏ vẫn làm tiếp; nếu web chỉ chạy khi cửa sổ hiện thì lúc bạn mở cửa sổ lên
+  extension làm tiếp, không bị huỷ vì chờ lâu.
+- Không bao giờ bấm nút Download của ảnh trước, và không bấm trên trang một ảnh cũ bạn tự mở ra
+  trong lúc chờ.
 
 Extension chỉ tự bấm khi bạn **vừa kéo, chọn hoặc dán ảnh**. Mở lại ảnh cũ hay tải lại
 trang sẽ không tự tải trùng.
 
 ## Cài đặt
 
-1. Tải file `vectorizer-auto-click-v1.5.1.zip` rồi giải nén. Bạn sẽ có thư mục
+1. Tải file `vectorizer-auto-click-v1.6.0.zip` rồi giải nén. Bạn sẽ có thư mục
    `vectorizer-auto-click` (bên trong có file `manifest.json`).
 2. Mở Chrome (cửa sổ bình thường), vào `chrome://extensions`.
 3. Bật **Chế độ dành cho nhà phát triển** (*Developer mode*).
@@ -99,4 +106,5 @@ test/               Trang giả lập + kiểm thử tự động (Playwright)
 Nút được tìm theo **chữ hiển thị** ("Pre-Crop", "OK", "DOWNLOAD") chứ không theo class CSS,
 nên ít bị hỏng khi web đổi giao diện. Nút bị lớp phủ che (bảng đang xử lý, nền mờ) thì chưa bấm.
 
-Chạy kiểm thử: `npm install && npm test`
+Chạy kiểm thử: `npm install && npm test` (thêm `npm run test:hidden` cho trường hợp cửa sổ ẩn,
+cần `xvfb-run` trên Linux).

@@ -26,27 +26,47 @@
       <button id="cancel">Cancel</button></div>
   </div>
   <a id="dl" href="#"><i class="material-icons">file_download</i> <span>Download</span></a>
+  <!-- Chế độ 'hash': trang Download hiện ngay trong trang này khi địa chỉ đổi thành #download -->
+  <div id="dlview" hidden style="position:fixed;inset:0;background:#fff;padding:20px">
+    <h1>Download</h1><h3>File format</h3>
+    <a id="main" class="btn" href="#" style="display:inline-block;padding:16px 40px;background:#3b82f6;color:#fff">Download</a>
+  </div>
 <script>
   const dl = document.getElementById('dl');
   const id = location.pathname.split('/').pop();
   // Đang xử lý: bảng Upload / Process / Fetch và nền mờ che nút DOWNLOAD (như web thật).
   let timer = 0;
+  const mode = localStorage.getItem('mockMode') || '';
+  const dlHref = (imgId) => (mode === 'query' ? '/dlpage?img=' + imgId
+    : mode === 'hash' ? '#download' : '/images/' + imgId + '/download');
+  addEventListener('hashchange', () => {
+    if (location.hash !== '#download') return;
+    document.getElementById('dlview').hidden = false;
+    document.getElementById('main').href = '/download/' + id;
+  });
   function process(newId, ms) {
     document.getElementById('busy').hidden = false;
     document.getElementById('progress').style.display = 'flex';
     timer = setTimeout(() => {
       document.getElementById('busy').hidden = true;
       document.getElementById('progress').style.display = 'none';
-      dl.href = '/images/' + newId + '/download';
+      dl.href = dlHref(newId);
     }, ms);
   }
   // Bấm CANCEL: đóng bảng; nút DOWNLOAD vẫn bấm được (trường hợp xấu nhất).
   document.getElementById('cancel').addEventListener('click', () => {
     clearTimeout(timer);
     document.getElementById('busy').hidden = true;
-    dl.href = '/images/' + id + '/download';
+    dl.href = dlHref(id);
   });
-  process(id, 2000);
+  // Ảnh vừa tải lên: hiện bảng xử lý. Mở lại ảnh cũ: hiện kết quả ngay, không có bảng.
+  if (sessionStorage.getItem('mockFresh')) {
+    sessionStorage.removeItem('mockFresh');
+    process(id, 2000);
+  } else {
+    document.getElementById('progress').style.display = 'none';
+    dl.href = dlHref(id);
+  }
   // Lớp trong suốt phủ cả trang (không phải bảng nào) → extension vẫn phải bấm được.
   if (location.search.includes('overlay')) {
     const o = document.createElement('div');
