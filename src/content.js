@@ -135,6 +135,7 @@
       name: name || 'ảnh',
       startedAt: Date.now(),
       startUrl: normUrl(location.href),
+      startId: imageId(location.href), // Ảnh đang mở lúc thả ảnh mới (ảnh trước), nếu có
       leftStart: false,  // Đã rời trang lúc bắt đầu (địa chỉ cũ không còn là "nút cũ" nữa)
       sawBusy: false,    // Đã thấy bảng Upload/Process/Fetch của ảnh này (ở trang nào đó)
       oldKeys: olds.map(dlKey),
@@ -297,7 +298,8 @@
       if (!item || job) return;
       startJob(item.name);
       job.itemId = item.id;
-      job.feed = { step: 1, at: Date.now(), url: location.href, ok: false };
+      // busyBefore: bảng xử lý đã mở sẵn (vd. ảnh trước bị treo) → bảng đó không chứng tỏ trang đã nhận ảnh này.
+      job.feed = { step: 1, at: Date.now(), url: location.href, ok: false, busyBefore: !!scan?.busyModal };
       saveJob();
       feedDrop(item);
     } finally {
@@ -344,7 +346,8 @@
   async function handleFeed() {
     const f = job.feed;
     if (!f || f.ok || feedBusy) return;
-    if (scan.precropHeading || scan.busyModal || (f.step !== 3 && location.href !== f.url)) {
+    if (f.busyBefore && !scan.busyModal) f.busyBefore = false; // Bảng cũ đã đóng: bảng mở lại là của ảnh này
+    if (scan.precropHeading || (scan.busyModal && !f.busyBefore) || (f.step !== 3 && location.href !== f.url)) {
       f.ok = true;
       saveJob();
       return;
@@ -367,6 +370,7 @@
         location.assign(`${location.origin}/`);
       } else if (f.step === 4) {
         f.url = location.href;
+        f.busyBefore = !!scan.busyModal;
         saveJob();
         feedDrop(item);
       } else {
@@ -512,6 +516,9 @@
     return bare(href) === bare(location.href) ? '' : normUrl(href);
   }
 
+  // Mã ảnh trong địa chỉ (/images/<mã>/…), '' nếu không có.
+  const imageId = (u) => { try { return (new URL(u, location.href).pathname.match(/^\/images\/([^/]+)/) || [])[1] || ''; } catch { return ''; } };
+
   // Nút được nhận diện theo địa chỉ đầy đủ của trang + link của nút.
   function dlKey(el) {
     return `${normUrl(location.href)}|${normUrl(el.closest('a[href]')?.href)}`;
@@ -528,8 +535,14 @@
     if (!job?.sawBusy) return true;
     const was = oldEls.get(el);
     if (was) { const now = realHref(el); return !now || now === was; }
-    return !isUncovered(el);
+    // Nút "#": của ảnh mới khi không còn gì che, và không còn nút nào hiện nguyên link thật của ảnh trước
+    // (link cũ còn trên trang = kết quả mới chưa có, nút "#" lúc này vẫn mở ảnh trước).
+    return !isUncovered(el) || oldLinkShown();
   }
+  const oldLinkShown = () => findButtons(RX.download).some((o) => {
+    const was = oldEls.get(o);
+    return !!was && isVisible(o) && realHref(o) === was;
+  });
 
   // Nút DOWNLOAD để bấm: ưu tiên nút không phải của ảnh trước, rồi nút đang bấm được, rồi nút to nhất.
   function pickDownloadButton() {
@@ -734,6 +747,13 @@
     if (scan.busyWord && now - readySince < BUSY_MAX_MS) return;
     const key = dlKey(el);
     if (isOld(el, key)) return; // Nút của ảnh trước → chờ kết quả của ảnh mới
+    // Lưới an toàn: đã bấm DOWNLOAD trên trang của ảnh mới mà lại sang trang của ảnh trước (ảnh đang mở lúc
+    // thả) → không bấm tải ở đây (thà không có file còn hơn tải nhầm ảnh trước).
+    const hereId = imageId(location.href);
+    if (job.stage === 'downloading' && job.startId && hereId === job.startId && job.clickId && job.clickId !== job.startId) {
+      finishJob('trang tải của ảnh trước');
+      return;
+    }
     // Mỗi nút bấm một lần. Bấm rồi mà sau RETRY_MS không có file về, trang không chuyển đi
     // (bấm hụt lúc trang chưa gắn xong nút) thì bấm lại, tối đa MAX_TRIES lần.
     const tries = job.tries || {};
@@ -751,6 +771,7 @@
         stage: 'downloading',
         clickedAt: now,
         firstClickAt: job.firstClickAt || now,
+        clickId: job.clickId ?? imageId(location.href), // Ảnh của trang lúc bấm DOWNLOAD lần đầu
         last: { key, url: location.href, href, at: now, fallback: false },
         tries: { ...tries, [key]: {
           n: (t?.n || 0) + 1, at: now, url: normUrl(location.href), hidden: document.hidden,
@@ -884,7 +905,12 @@
     // giờ); còn ảnh khác chờ thì vẫn có giới hạn, để một ảnh hỏng không chặn cả hàng.
     const hidden = document.hidden;
     const othersWaiting = queueCount - (job?.itemId != null ? 1 : 0) > 0;
-    if (job && (!hidden || othersWaiting) && Date.now() - job.startedAt > JOB_TTL_MS) finishJob('quá 10 phút');
+    // Lúc ẩn: bảng xử lý đã hiện rồi đóng trên trang này, không còn bảng nào mở, mà chưa thấy kết quả → trang
+    // chỉ chờ được vẽ (cửa sổ mở lên). Không bỏ ảnh này vì quá giờ; mở cửa sổ lên thì tính giờ lại như thường.
+    const awaitingPaint = hidden && !!job && job.stage === 'waiting' && sawBusyHere && !scan.busyModal
+      && !scan.precropHeading && !(job.feed && !job.feed.ok)
+      && ![...document.querySelectorAll(DIALOG_COVER_SEL)].some(isVisible);
+    if (job && (!hidden || (othersWaiting && !awaitingPaint)) && Date.now() - job.startedAt > JOB_TTL_MS) finishJob('quá 10 phút');
     if (job && !job.leftStart && normUrl(location.href) !== job.startUrl) {
       job.leftStart = true;
       saveJob();
@@ -920,7 +946,7 @@
     }
     // Đứng yên quá lâu thì bỏ. Lúc ẩn chỉ bỏ khi còn ảnh khác chờ (để hàng chờ chạy tiếp): trang ẩn có thể chỉ
     // hiện kết quả khi cửa sổ mở lên, ảnh duy nhất thì cứ đợi.
-    if (job && job.stage === 'waiting' && (!hidden || othersWaiting) && Date.now() - progressAt > STALL_MS) {
+    if (job && job.stage === 'waiting' && (!hidden || (othersWaiting && !awaitingPaint)) && Date.now() - progressAt > STALL_MS) {
       finishJob('đứng yên quá lâu');
     }
     if (job && job.feed && !job.feed.ok) {

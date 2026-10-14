@@ -1,6 +1,6 @@
 {
   "name": "vectorizer-auto-click",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "private": true,
   "description": "Chrome extension: tự bấm OK (Pre-Crop) và DOWNLOAD trên Vectorizer.AI",
   "scripts": {

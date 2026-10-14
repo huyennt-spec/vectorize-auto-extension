@@ -90,8 +90,8 @@ async function launch() {
       await page.send('Page.reload');
       await sleep(1500);
     },
-    drop: (name) => onPage(`(() => { const dt = new DataTransfer();
-      dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], ${JSON.stringify(name)}, { type: 'image/png' }));
+    drop: (names) => onPage(`(() => { const dt = new DataTransfer();
+      for (const n of ${JSON.stringify([].concat(names))}) dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], n, { type: 'image/png' }));
       const target = document.getElementById('drop') || document.body;
       for (const type of ['dragenter', 'dragover', 'drop']) target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt })); })()`),
     busyClicks: () => logs.filter((l) => /pill-click .*processing=true/.test(l)).length,
@@ -123,7 +123,23 @@ const tests = {
     const hid = await waitFor(() => t.isHidden(), 5000);
     const ok = await waitFor(async () => t.files().includes('big-h2.svg'), 40000);
     const stillHidden = await t.isHidden().catch(() => null);
-    return { pass: !!hid && ok && t.busyClicks() === 0, busyClicks: t.busyClicks(), stillHidden, files: t.files() };
+    await sleep(5000); // Không được có file thừa
+    return { pass: !!hid && ok && t.busyClicks() === 0 && t.files().length === 1, busyClicks: t.busyClicks(), stillHidden, files: t.files() };
+  },
+  // H3. Kéo 3 ảnh một lúc rồi cửa sổ ẩn 2 phút; kết quả chỉ hiện khi trang được vẽ → không được bỏ ảnh nào vì
+  // "đứng yên" lúc ẩn; hiện cửa sổ lên thì cả 3 ảnh đều về, mỗi ảnh đúng 1 file.
+  async 'H3-queue-raf'(t) {
+    await t.setMode({ href: 'hash', show: 'raf', procMs: 5000 });
+    await t.drop(['big-qa.png', 'big-qb.png', 'big-qc.png']);
+    await sleep(400);
+    await t.hide();
+    const hid = await waitFor(() => t.isHidden(), 5000);
+    await sleep(120000);
+    await t.show();
+    const want = ['big-qa.svg', 'big-qb.svg', 'big-qc.svg'];
+    const ok = await waitFor(async () => want.every((f) => t.files().includes(f)), 120000);
+    await sleep(5000);
+    return { pass: !!hid && ok && JSON.stringify(t.files()) === JSON.stringify(want), files: t.files() };
   },
 };
 

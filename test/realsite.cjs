@@ -16,10 +16,13 @@ async function waitFor(fn, ms) {
   for (;;) { const v = await fn(); if (v) return v; if (Date.now() > end) return false; await sleep(200); }
 }
 
-async function launch() {
+// Cửa sổ rộng ≥ 1200 px: chữ DOWNLOAD trên thanh công cụ (#App-DownloadLink, "#") hiện ra, thành nút thứ hai.
+const WIDE = /wide/;
+
+async function launch(width = 820) {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'va-real-'));
   const context = await chromium.launchPersistentContext(userDataDir, {
-    channel: 'chromium', headless: true, viewport: { width: 820, height: 620 },
+    channel: 'chromium', headless: true, viewport: { width, height: 620 },
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
   });
   const logs = [];
@@ -71,12 +74,12 @@ async function launch() {
       await page.goto(HOME);
       await page.evaluate((m) => localStorage.setItem('appMode', JSON.stringify(m)), mode);
     },
-    drop: (name) => page.evaluate((fileName) => {
+    drop: (names) => page.evaluate((fileNames) => {
       const dt = new DataTransfer();
-      dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], fileName, { type: 'image/png' }));
+      for (const fileName of fileNames) dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], fileName, { type: 'image/png' }));
       const target = document.getElementById('drop') || document.body;
       for (const type of ['dragenter', 'dragover', 'drop']) target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
-    }, name),
+    }, [].concat(names)),
     busyClicks: () => logs.filter((l) => /pill-click .*processing=true/.test(l)).length,
   };
 }
@@ -149,13 +152,52 @@ const tests = {
     const ok = await waitFor(() => t.downloads.includes('big-r7.svg'), 30000);
     return { pass: ok, downloads: [...t.downloads] };
   },
+  // R8 (giữ an toàn). Thả ảnh mới trên trang kết quả của ảnh trước; nút DOWNLOAD "#" dùng lại, kết quả mới hiện
+  // chậm 3 giây sau khi bảng xử lý đóng (trong lúc đó nút vẫn mở ảnh trước) → không được tải file của ảnh trước.
+  async 'R8-hash-gap'(t) {
+    await t.setMode({ href: 'hash', show: 'during', pill: 'reuse', procMs: 6000, gapMs: 3000 });
+    await t.page.goto(`${HOME}images/1000-prev.png/edit`); await sleep(2500);
+    await t.drop('r8.png');
+    await sleep(30000);
+    return { pass: !t.downloads.includes('prev.svg') && t.downloads.length <= 1, downloads: [...t.downloads] };
+  },
+  // R9. Cửa sổ rộng: nút "#" trên thanh công cụ cũng hiện chữ DOWNLOAD (và mở kết quả đang hiện). Nút DOWNLOAD
+  // có link thật dùng lại, kết quả mới chậm 3 giây → phải tải đúng ảnh mới, đúng 1 file, không tải ảnh trước.
+  async 'R9-wide-toolbar-gap'(t) {
+    await t.setMode({ href: 'real', show: 'during', pill: 'reuse', procMs: 6000, gapMs: 3000, toolbarNav: true });
+    await t.page.goto(`${HOME}images/1000-prev.png/edit`); await sleep(2500);
+    await t.drop('r9.png');
+    const ok = await waitFor(() => t.downloads.includes('r9.svg'), 40000);
+    await sleep(4000);
+    return { pass: ok && t.downloads.length === 1, downloads: [...t.downloads] };
+  },
+  // R10 (giữ an toàn). Cửa sổ rộng, web báo lỗi, bạn bấm ra ngoài để đóng bảng lỗi → không được tải ảnh trước.
+  async 'R10-wide-error-dismissed'(t) {
+    await t.setMode({ href: 'real', show: 'during', pill: 'reuse', procMs: 5000, fail: true, bsDismiss: true, toolbarNav: true });
+    await t.page.goto(`${HOME}images/1000-prev.png/edit`); await sleep(2500);
+    await t.drop('r10.png');
+    await waitFor(() => t.logs.some((l) => /ERROR dialog/.test(l)), 20000);
+    await sleep(2000);
+    await t.page.mouse.click(15, 600); // Bấm thật vào vùng mờ ngoài bảng
+    await sleep(15000);
+    return { pass: t.downloads.length === 0, downloads: [...t.downloads] };
+  },
+  // R11. Cửa sổ rộng, kéo 3 ảnh một lúc (hàng chờ): mỗi ảnh đúng 1 file, đúng thứ tự, không lẫn.
+  async 'R11-wide-queue'(t) {
+    await t.setMode({ href: 'real', show: 'during', pill: 'reuse', procMs: 4000, toolbarNav: true });
+    await t.page.goto(HOME); await sleep(800);
+    await t.drop(['w1.png', 'w2.png', 'w3.png']);
+    await waitFor(() => t.downloads.length >= 3, 120000);
+    await sleep(6000);
+    return { pass: JSON.stringify(t.downloads) === JSON.stringify(['w1.svg', 'w2.svg', 'w3.svg']), downloads: [...t.downloads] };
+  },
 };
 
 (async () => {
   const names = ONLY.length ? ONLY : Object.keys(tests);
   const results = await Promise.all(names.map(async (name, i) => {
     await sleep(i * 1500);
-    const t = await launch();
+    const t = await launch(WIDE.test(name) ? 1280 : 820);
     let r;
     try { r = await tests[name](t); } catch (e) { r = { pass: false, error: String(e) }; }
     r.ends = (await t.ends().catch(() => [])).map((e) => ({ reason: e.reason, hidden: e.hidden, stage: e.stage, clicks: e.clicks, tries: e.tries, sawBusy: e.sawBusy, keys: e.keys }));
