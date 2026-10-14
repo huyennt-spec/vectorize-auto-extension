@@ -186,7 +186,7 @@ function renderMembers() {
         el('span', { class: `chip ${canUse ? 'ok' : 'bad'}`, text: canUse ? 'Dùng được' : 'Không dùng được' }))),
       el('td', {}, el('div', { class: 'usage' },
         el('div', {}, 'Hôm nay ', el('b', { text: String(us.days?.[day()] || 0) }), ' · Tổng ', el('b', { text: String(us.total || 0) })),
-        el('div', { class: 'dim', text: us.lastSeen ? `Online ${fmtTime(us.lastSeen)}${us.version ? ` · v${us.version}` : ''}` : 'Chưa dùng' }))));
+        el('div', { class: 'dim', text: us.lastSeen ? `Lần cuối ${fmtTime(us.lastSeen)}${us.version ? ` · v${us.version}` : ''}` : 'Chưa dùng' }))));
   }));
   const total = Object.keys(data.users).length;
   $('membersSummary').textContent = `${total} thành viên · ${allowedCount}${q ? ' (trong kết quả lọc)' : ''} đang dùng được Auto Click`;

@@ -78,8 +78,8 @@ textarea.input { min-height: 64px; resize: vertical; }
 
 .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
 .row:first-child { border-top: 0; padding-top: 0; }
-.row .label { display: grid; gap: 1px; }
-.row .label small { color: var(--dim); font-size: 11px; }
+.row .label { display: block; }
+.row .label small { display: block; margin-top: 1px; color: var(--dim); font-size: 11px; }
 
 /* ---------- Nhãn trạng thái ---------- */
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1px solid var(--line-strong); white-space: nowrap; }
@@ -88,7 +88,7 @@ textarea.input { min-height: 64px; resize: vertical; }
 .chip.warn { color: #fcd34d; border-color: rgba(245, 158, 11, .4); background: rgba(245, 158, 11, .08); }
 .chip.bad { color: #fda4af; border-color: rgba(244, 63, 94, .4); background: rgba(244, 63, 94, .08); }
 .chip.info { color: #7dd3fc; border-color: rgba(56, 189, 248, .4); background: rgba(56, 189, 248, .08); }
-.badge { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; color: var(--muted); border: 1px solid var(--line-strong); }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; color: var(--muted); border: 1px solid var(--line-strong); white-space: nowrap; }
 
 .notice { padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid rgba(245, 158, 11, .35); background: rgba(245, 158, 11, .07); color: #fde68a; font-size: 12px; }
 .notice.bad { border-color: rgba(244, 63, 94, .35); background: rgba(244, 63, 94, .07); color: #fecdd3; }

@@ -6,7 +6,7 @@ body { width: 320px; padding: 14px; }
 .account .who { min-width: 0; flex: 1; }
 .account .name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account .dim { font-size: 11.5px; }
-#notice { margin-top: 10px; }
+#viewMain > * + * { margin-top: 10px; }
 
 #settingsCard.locked { opacity: .5; }
 
@@ -24,3 +24,4 @@ body { width: 320px; padding: 14px; }
 .actions { display: flex; gap: 6px; margin-top: 12px; }
 .actions .btn { flex: 1; }
 .debug { display: block; margin: 10px auto 0; }
+.hint { margin: 4px 0 0; font-size: 11.5px; }
