@@ -21,7 +21,8 @@ async function waitFor(fn, ms, what) {
 
 // mock.deferMs > 0: trang Download có script defer /assets/dl-wire.js trả về chậm bấy lâu (như web thật).
 async function launch({ headless = true } = {}) {
-  const mock = { deferMs: 0 };
+  // slowMs: máy chủ trả file chậm bấy lâu. requests: số lần trang xin mỗi file (để bắt tải trùng / tải lại).
+  const mock = { deferMs: 0, slowMs: 0, requests: {} };
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'va-test-'));
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
@@ -31,6 +32,8 @@ async function launch({ headless = true } = {}) {
   await context.route(/^https:\/\/vectorizer\.ai\//, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/download/')) {
+      mock.requests[url.pathname] = (mock.requests[url.pathname] || 0) + 1;
+      if (mock.slowMs) await sleep(mock.slowMs);
       const name = decodeURIComponent(url.pathname.split('-').slice(1).join('-')).replace(/\.png$/, '.svg');
       return route.fulfill({
         status: 200,

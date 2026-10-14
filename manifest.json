@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Auto Click",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Kéo ảnh vào là xong: tự bấm OK và Download, tải file về máy.",
   "minimum_chrome_version": "102",
   "permissions": [
     "storage",
     "downloads",
-    "scripting"
+    "scripting",
+    "contentSettings"
   ],
   "host_permissions": [
     "https://vectorizer.ai/*",

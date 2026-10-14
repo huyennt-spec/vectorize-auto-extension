@@ -18,6 +18,9 @@
   <nav><a href="/pricing">Pricing</a><a href="/api">API</a></nav>
   <div id="drop">Drag image here <input type="file" id="file"></div>
   <p id="status"></p>
+  <div id="busyhome" hidden style="position:fixed;left:30%;top:60px;width:280px;background:#fff;padding:16px;border:1px solid #ccc">
+    Upload<br>Process<br>Fetch<br><button id="cancelhome">Cancel</button>
+  </div>
   <p>FAQ: You can use the pre-crop tool to crop large images before vectorizing them, which keeps the most detail.</p>
   <div id="pre" hidden>
     <div class="overlay"></div>
@@ -35,12 +38,33 @@
   </div>
 <script>
   let current = null;
+  let okReadyAt = 0;
   function upload(file) {
     current = file;
-    if (/big/.test(file.name)) document.getElementById('pre').hidden = false;
-    else go();
+    if (/big/.test(file.name)) {
+      document.getElementById('pre').hidden = false;
+      if (mode === 'pcguard') { // Nút OK bị khoá (pointer-events) 6 giây, bấm sớm không ăn
+        const ok = document.getElementById('ok');
+        ok.style.pointerEvents = 'none';
+        okReadyAt = Date.now() + 6000;
+        setTimeout(() => { ok.style.pointerEvents = ''; }, 6000);
+      }
+    } else go();
   }
+  const mode = localStorage.getItem('mockMode') || '';
   function go() {
+    if (/err/.test(current.name)) { // Web báo lỗi ảnh này, không đi tiếp
+      document.getElementById('status').textContent = 'Error: this image could not be processed.';
+      return;
+    }
+    if (mode === 'busyhome') {
+      // Bảng xử lý hiện ngay ở trang chủ, xong mới mở trang kết quả (trang đó không hiện bảng nữa).
+      document.getElementById('busyhome').hidden = false;
+      setTimeout(() => {
+        location.href = '/images/' + Date.now() + '-' + encodeURIComponent(current.name);
+      }, 2000);
+      return;
+    }
     document.getElementById('status').textContent = 'Uploading...';
     setTimeout(() => {
       sessionStorage.setItem('mockFresh', '1'); // Trang kết quả sẽ hiện bảng xử lý (ảnh mới tải lên)
@@ -51,7 +75,11 @@
   document.addEventListener('drop', (e) => { e.preventDefault(); upload(e.dataTransfer.files[0]); });
   document.getElementById('file').addEventListener('change', (e) => upload(e.target.files[0]));
   document.getElementById('ok').addEventListener('mousedown', () => { window.__okDown = true; });
-  document.getElementById('ok').addEventListener('click', () => { document.getElementById('pre').hidden = true; go(); });
+  document.getElementById('ok').addEventListener('click', () => {
+    if (Date.now() < okReadyAt) return;
+    document.getElementById('pre').hidden = true;
+    go();
+  });
   document.getElementById('cancel').addEventListener('click', () => { document.getElementById('pre').hidden = true; });
 </script>
 </body></html>

@@ -23,7 +23,10 @@
   const DOWNLOAD_CONFIRM_MS = 40 * 1000; // Chờ file tải về tối đa bấy lâu sau lần bấm cuối / từ lúc sang trang
   const MAX_CLICKS = 6;                  // Số lần bấm "Download" tối đa cho mỗi ảnh (mọi trang cộng lại)
   const MAX_TRIES = 2;                   // Một nút bấm hụt (trang chưa sẵn sàng) thì bấm lại tối đa bấy lần
-  const RETRY_MS = 6000;                 // Bấm xong bấy lâu mà không có file về, trang không chuyển → bấm lại
+  const RETRY_MS = 3000;                 // Bấm hụt (có bằng chứng) → chờ bấy lâu rồi bấm lại
+  const MISS_CHECK_MS = 1500;            // Bấm xong bấy lâu thì xét xem cú bấm có hụt không
+  const HIDDEN_DL_CAP_MS = 3 * 60 * 1000; // Cửa sổ ẩn mà còn ảnh khác chờ: đợi file tối đa bấy lâu
+  const SHOW_GRACE_MS = 2 * 60 * 1000;   // Cửa sổ vừa hiện lại: việc đang làm còn ít nhất bấy lâu
   const SETTLE_MS = 700;                 // Trang tải xong hẳn bấy lâu rồi mới bấm (để script của trang gắn xong nút)
   const NAV_WINDOW_MS = 20 * 1000;       // Trang mở ra quá bấy lâu sau lần bấm cuối → do bạn tự chuyển trang
   const STALE_DL_ON_DROP_MS = 8000;      // Bạn kéo ảnh mới mà ảnh trước bấm tải đã bấy lâu chưa có file → bỏ
@@ -60,7 +63,6 @@
   let precropAttempts = 0;
   let lastPrecropClickAt = 0;
   let stoppedAt = 0;
-  let busyAfterStop = false; // Dừng lúc bảng tiến trình đang hiện → chờ bảng tắt mới nhận việc mới
   let scan = null;           // Kết quả quét chữ trên trang của lượt hiện tại
   let tab = { tabId: -1, bootId: '' }; // Tab này (để hàng chờ của tab nào tab nấy làm)
   let queueCount = 0;        // Số ảnh trong hàng chờ của tab này (kể cả ảnh đang làm)
@@ -74,6 +76,11 @@
   let clicking = false;      // Đang trong một lần bấm DOWNLOAD (chờ background trả lời)
   let stopRequested = false; // Bạn bấm dừng lúc trang vừa mở, việc đang làm chưa nạp xong
   let sawBusyHere = false;   // Đã thấy bảng Upload/Process/Fetch của ảnh đang làm ngay trên trang này
+  let navStartedAt = 0;      // Lúc trang bắt đầu chuyển đi (cú bấm đã có tác dụng)
+  let checkClick = null;     // Lần bấm Download đang chờ xét có hụt không: { key, at }
+  const trace = [];          // Nhật ký ngắn các sự kiện gần đây (cho "Sao chép thông tin lỗi")
+  const note = (m) => { trace.push(`${(performance.now() / 1000).toFixed(1)} ${m}`); if (trace.length > 40) trace.shift(); };
+  let ends = [];             // 10 lần kết thúc ảnh gần nhất và lý do (cho "Sao chép thông tin lỗi")
 
   // ---------- Cài đặt ----------
   chrome.storage.sync.get(VA.DEFAULTS).then((s) => { settings = s; }).catch(() => {});
@@ -86,6 +93,8 @@
   // Việc đang làm được lưu ở background theo tab, nên vẫn còn khi trang chuyển đi.
   const hello = chrome.runtime.sendMessage({ type: 'va:hello' }).then((r) => {
     tab = { tabId: r.tabId, bootId: r.bootId };
+    note(`hello job=${r.job?.id || '-'} stage=${r.job?.stage || '-'}`);
+    ends = [...(r.ends || []), ...ends].slice(-10);
     if (jobLoaded) return; // Trong lúc chờ bạn đã thả ảnh mới
     jobLoaded = true;
     if (r.job && Date.now() - r.job.startedAt < JOB_TTL_MS) job = r.job;
@@ -95,7 +104,7 @@
     // Trang này mở ra lâu sau lần bấm cuối: không phải do extension bấm mà do bạn tự chuyển trang
     // → bỏ ảnh đó, không bấm nút trên trang này.
     if (job && job.stage === 'downloading' && !job.dlStarted && !document.hidden
-      && Date.now() - job.clickedAt > NAV_WINDOW_MS) finishJob();
+      && Date.now() - job.clickedAt > NAV_WINDOW_MS) finishJob('tự chuyển trang');
   }).catch(() => { jobLoaded = true; });
   hello.then(refreshQueue);
 
@@ -131,13 +140,23 @@
     sawBusyHere = false;
     progressAt = Date.now();
     stoppedAt = 0;
-    busyAfterStop = false;
     saveJob();
   }
 
-  function finishJob() {
+  function finishJob(reason = '') {
+    if (job) {
+      ends = [...ends, {
+        name: job.name, reason, at: new Date().toLocaleTimeString('vi-VN'), hidden: document.hidden,
+        stage: job.stage, clicks: job.clicks || 0, clickedAgo: job.clickedAt ? Date.now() - job.clickedAt : null,
+        tries: Object.values(job.tries || {}).map((t) => `${t.n}${t.miss ? 'h' : ''}${t.prevented ? 'p' : ''}`).join(','),
+        trace: trace.slice(-12),
+      }].slice(-10);
+      chrome.runtime.sendMessage({ type: 'va:ended', ends }).catch(() => {});
+    }
     const itemId = job?.itemId;
     job = null;
+    checkClick = null;
+    precropAttempts = 0;
     idleSince = Date.now();
     saveJob();
     if (itemId != null) queueOp(() => qDelete([itemId])).then(refreshQueue);
@@ -145,10 +164,9 @@
 
   // Bạn bấm dừng: bỏ ảnh đang làm và cả hàng chờ.
   function stopJob() {
-    finishJob();
+    finishJob('bấm dừng');
     queueOp(async () => qDelete((await qMine()).map((it) => it.id))).then(refreshQueue);
     stoppedAt = Date.now();
-    busyAfterStop = true;
     precropAttempts = MAX_PRECROP_CLICKS; // Không bấm OK lại cho bảng đang mở
   }
 
@@ -162,9 +180,11 @@
     const images = files.filter(isImage);
     if (!images.length) return;
     // Ảnh đang làm đã đứng yên (vd. bị bỏ dở rồi chuyển trang) → bỏ, nhận ảnh mới luôn.
-    if (job && job.stage === 'waiting' && Date.now() - progressAt > STALL_ON_DROP_MS) finishJob();
-    if (job && job.stage === 'downloading' && !job.dlStarted
-      && Date.now() - job.clickedAt > STALE_DL_ON_DROP_MS) finishJob();
+    if (job && job.stage === 'waiting' && Date.now() - progressAt > STALL_ON_DROP_MS) finishJob('đứng yên, có ảnh mới');
+    // Ảnh trước đã bấm tải nhưng cú bấm chắc chắn hụt và đã lâu: bỏ. Còn đang tải (dù chậm) thì để yên,
+    // ảnh mới vào hàng chờ, không được cắt ngang file đang tải.
+    if (job && job.stage === 'downloading' && !job.dlStarted && lastTry()?.miss
+      && Date.now() - job.clickedAt > STALE_DL_ON_DROP_MS) finishJob('bấm hụt, có ảnh mới');
     const busy = !!job || !jobLoaded || !queueLoaded || pumping || queueCount > 0 || images.length > 1;
     if (busy) {
       e.preventDefault();
@@ -324,7 +344,7 @@
       let item = null;
       await queueOp(async () => { item = (await qMine()).find((it) => it.id === job?.itemId); });
       if (!job || job.feed !== f) return;
-      if (!item) { finishJob(); return; }
+      if (!item) { finishJob('mất ảnh trong hàng chờ'); return; }
       f.step++;
       f.at = Date.now();
       if (f.step === 2 || f.step === 5) {
@@ -339,7 +359,7 @@
         saveJob();
         feedDrop(item);
       } else {
-        finishJob(); // Không đưa được ảnh này vào trang → bỏ qua, làm ảnh sau
+        finishJob('trang không nhận ảnh'); // Không đưa được ảnh này vào trang → bỏ qua, làm ảnh sau
       }
     } finally {
       feedBusy = false;
@@ -404,14 +424,16 @@
     return r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
   }
 
-  function isEnabled(el) {
+  // relaxHidden: cửa sổ ẩn thì hiệu ứng mở khoá nút (bỏ pointer-events: none khi chạy xong) không chạy,
+  // nên với lần bấm đầu tiên của một nút thì bỏ qua pointer-events. Các lần khác vẫn xét chặt
+  // (trang có thể đang khoá nút vì đang chuẩn bị file).
+  function isEnabled(el, relaxHidden = false) {
     for (let n = el; n && n !== document.body; n = n.parentElement) {
       if (n.disabled || n.inert || n.getAttribute('aria-disabled') === 'true') return false;
     }
     const cls = typeof el.className === 'string' ? el.className : '';
     if (/\bdisabled\b/i.test(cls)) return false;
-    // Cửa sổ ẩn: hiệu ứng mở khoá nút (bỏ pointer-events: none khi chạy xong) không chạy được.
-    return document.hidden || getComputedStyle(el).pointerEvents !== 'none';
+    return (relaxHidden && document.hidden) || getComputedStyle(el).pointerEvents !== 'none';
   }
 
   // Có lớp phủ nào (bảng "Upload / Process / Fetch", nền mờ…) đè lên nút không?
@@ -461,7 +483,7 @@
   // Nút DOWNLOAD chính: ưu tiên nút đang bấm được, rồi nút to nhất.
   function findDownloadButton() {
     const cands = findButtons(RX.download).filter(isVisible).sort((a, b) => area(b) - area(a));
-    return cands.find((el) => isEnabled(el) && isUncovered(el)) || cands[0] || null;
+    return cands.find((el) => isEnabled(el, true) && isUncovered(el)) || cands[0] || null;
   }
 
   // Bỏ dấu # trơn ở cuối: bấm vào link href="#" khi trang chưa sẵn sàng chỉ thêm "#" vào địa chỉ.
@@ -483,8 +505,23 @@
   // Fetch trên trang kết quả của nó; trang mở ra mà không có bảng đó (vd. bạn mở lại ảnh cũ trong
   // lúc chờ) thì không bấm. Ngoại lệ: trang lúc bắt đầu (web xử lý tại chỗ), đã sang bước tải
   // (trang Download), hoặc chưa từng thấy bảng đó (phòng khi web không hiện bảng).
-  const resultPageHere = () => job && (job.stage === 'downloading' || sawBusyHere || !job.sawBusy
-    || (!job.leftStart && normUrl(location.href) === job.startUrl));
+  // Trang kết quả cũng có thể là trang cùng đường dẫn với nơi đã thấy bảng (web tải lại / chuyển sang
+  // địa chỉ chuẩn sau khi xử lý), hoặc trang mở ra ngay sau trang bắt đầu nếu bảng hiện ở trang bắt đầu.
+  const under = (path, p) => path === p || (p !== '/' && path.startsWith(`${p.replace(/\/+$/, '')}/`));
+  function resultPageHere() {
+    if (!job) return false;
+    if (job.stage === 'downloading' || sawBusyHere || !job.sawBusy) return true;
+    if (!job.leftStart && normUrl(location.href) === job.startUrl) return true;
+    if ((job.busyPaths || []).some((p) => under(location.pathname, p))) return true;
+    if (job.busyOnStart && job.leftStart) {
+      if (!job.nextPath) {
+        job.nextPath = location.pathname;
+        saveJob();
+      }
+      return location.pathname === job.nextPath;
+    }
+    return false;
+  }
 
   // Trang đã tải xong hẳn chưa (script của trang đã kịp gắn việc cho nút).
   const pageSettled = () => completeAt > 0 && Date.now() - completeAt >= SETTLE_MS;
@@ -493,20 +530,48 @@
   // các nút trên trang này, trừ khi file đã bắt đầu tải.
   listen(document, 'visibilitychange', () => {
     if (document.hidden || !job) return;
+    const now = Date.now();
+    readySince = 0;      // Chờ nút ổn định lại rồi mới bấm
+    precropAttempts = 0; // Bảng Pre-Crop còn mở thì được thử lại
     // Thời gian ẩn không tính vào hạn chờ.
-    progressAt = Date.now();
+    job.startedAt = Math.max(job.startedAt, now - JOB_TTL_MS + SHOW_GRACE_MS);
     if (job.stage === 'downloading') {
-      job.clickedAt = Math.max(job.clickedAt || 0, Date.now() - DOWNLOAD_CONFIRM_MS + AFTER_SHOW_MS);
-      saveJob();
+      progressAt = now;
+      job.clickedAt = Math.max(job.clickedAt || 0, now - DOWNLOAD_CONFIRM_MS + AFTER_SHOW_MS);
     }
-    if (!job.tries || job.dlStarted) return;
-    const here = normUrl(location.href);
-    const tries = Object.fromEntries(Object.entries(job.tries).filter(([, t]) => t.url !== here));
-    if (Object.keys(tries).length !== Object.keys(job.tries).length) {
-      job.tries = tries;
-      saveJob();
+    // Chỉ cho bấm lại những lần bấm chắc chắn hụt lúc ẩn (trang chỉ chạy khi cửa sổ hiện).
+    if (job.tries && !job.dlStarted) {
+      const here = normUrl(location.href);
+      job.tries = Object.fromEntries(Object.entries(job.tries).filter(([, t]) => !(t.url === here && t.miss)));
     }
+    saveJob();
   });
+
+  // Trang bắt đầu chuyển đi (vd. cú bấm Download đã mở link tải file).
+  listen(window, 'beforeunload', () => { navStartedAt = Date.now(); });
+  listen(window, 'pagehide', () => { navStartedAt = Date.now(); });
+  if (window.navigation) {
+    // Chỉ tính khi sang trang khác thật (bấm link "#" chỉ đổi phần # trong cùng trang).
+    navigation.addEventListener('navigate', (e) => {
+      if (e.destination && !e.destination.sameDocument) navStartedAt = Date.now();
+    }, { signal: ac.signal });
+  }
+
+  // Lần bấm gần nhất trên trang này.
+  const lastTry = () => (job?.last ? job.tries?.[job.last.key] : null);
+
+  // Bấm xong MISS_CHECK_MS: cú bấm "hụt" khi trang không nhận (không preventDefault), trang không
+  // chuyển đi, và nút là link "#" (href trỏ về chính trang) nên địa chỉ chỉ thêm dấu #.
+  // Chỉ những lần hụt mới được bấm lại; bấm trúng mà file về chậm thì chờ, không bấm thêm.
+  function checkMiss() {
+    if (!checkClick || !job || Date.now() - checkClick.at < MISS_CHECK_MS) return;
+    const t = job.tries?.[checkClick.key];
+    const at = checkClick.at;
+    checkClick = null;
+    if (!t) return;
+    t.miss = !t.prevented && navStartedAt < at && t.hashLink && normUrl(location.href) === t.url;
+    saveJob();
+  }
 
   function realClick(el) {
     el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -523,7 +588,11 @@
     if (typeof el.focus === 'function') el.focus({ preventScroll: true });
     el.dispatchEvent(new PointerEvent('pointerup', ptr));
     el.dispatchEvent(new MouseEvent('mouseup', opts));
-    el.click(); // click() tự kích hoạt cả link <a href> (tải file)
+    // Sự kiện click tự tạo vẫn kích hoạt link <a href> như click(); trang gọi preventDefault
+    // nghĩa là script của trang đã nhận cú bấm.
+    const click = new MouseEvent('click', { ...opts, detail: 1 });
+    const notPrevented = el.dispatchEvent(click);
+    return { prevented: !notPrevented || click.defaultPrevented };
   }
 
   // ---------- Quét chữ trên trang (một lượt cho mỗi vòng lặp) ----------
@@ -600,8 +669,9 @@
     if (el && !isOld(el, dlKey(el))) progressAt = now;
     const uncovered = !!el && isUncovered(el);
     if (!el || uncovered) coveredSince = 0;
+    const firstClick = !!el && !job.tries?.[dlKey(el)]; // Lần bấm đầu tiên của nút này
     let wait = false; // Còn phải chờ
-    if (!el || busy || !isEnabled(el)) wait = true;
+    if (!el || busy || !isEnabled(el, firstClick)) wait = true;
     else if (!uncovered) {
       // Có vẻ bị che nhưng không có bảng nào đang hiện: chờ thêm chút rồi vẫn bấm.
       if (!coveredSince) coveredSince = now;
@@ -621,18 +691,24 @@
     // (bấm hụt lúc trang chưa gắn xong nút) thì bấm lại, tối đa MAX_TRIES lần.
     const tries = job.tries || {};
     const t = tries[key];
-    if (t && (t.n >= MAX_TRIES || job.dlStarted || now - t.at < RETRY_MS
-      || normUrl(location.href) !== t.url)) return;
+    // Đã bấm nút này rồi: chỉ bấm lại khi lần trước chắc chắn hụt.
+    if (t && !(t.miss && t.n < MAX_TRIES && !job.dlStarted && now - t.at >= RETRY_MS
+      && normUrl(location.href) === t.url)) return;
     if ((job.clicks || 0) >= MAX_CLICKS || clicking) return;
 
     clicking = true;
     try {
       const jobId = job.id;
+      const href = el.closest('a[href]')?.href || '';
       const after = {
         stage: 'downloading',
         clickedAt: now,
-        last: { url: location.href, href: el.closest('a[href]')?.href || '', at: now, fallback: false },
-        tries: { ...tries, [key]: { n: (t?.n || 0) + 1, at: now, url: normUrl(location.href) } },
+        firstClickAt: job.firstClickAt || now,
+        last: { key, url: location.href, href, at: now, fallback: false },
+        tries: { ...tries, [key]: {
+          n: (t?.n || 0) + 1, at: now, url: normUrl(location.href),
+          hashLink: !href || normUrl(href) === normUrl(location.href), // Link "#": trỏ về chính trang
+        } },
         clicks: (job.clicks || 0) + 1,
       };
       // Báo background (kèm việc sau khi bấm) trước khi bấm, để nó nhận ra file tải về thuộc ảnh này.
@@ -642,13 +718,17 @@
       ]);
       if (!job || job.id !== jobId) return; // Bạn vừa bấm dừng
       const target = el.isConnected ? el : findDownloadButton(); // Nút vừa bị vẽ lại → lấy nút mới
-      if (!target || dlKey(target) !== key || !isVisible(target) || !isEnabled(target)) {
+      if (!target || dlKey(target) !== key || !isVisible(target) || !isEnabled(target, firstClick)
+        || job.dlStarted || navStartedAt >= now) { // File đã bắt đầu tải / trang đã chuyển trong lúc chờ
         readySince = 0;
         saveJob(); // Chưa bấm: trả lại trạng thái cũ cho background
         return;
       }
-      realClick(target);
+      const { prevented } = realClick(target);
+      note(`bấm ${key.slice(-40)} prevented=${prevented}`);
+      after.tries[key].prevented = prevented;
       Object.assign(job, after); // Chỉ ghi "đã bấm" sau khi bấm thật
+      checkClick = { key, at: now };
       saveJob();
     } finally {
       clicking = false;
@@ -660,6 +740,7 @@
     const last = job.last;
     if (job.stage !== 'downloading' || job.dlStarted || !last || last.fallback) return;
     if (Date.now() - last.at < FALLBACK_MS || normUrl(location.href) !== normUrl(last.url)) return;
+    if (navStartedAt >= last.at) return; // Cú bấm đã mở link (file đang tải chậm) → không mở lại
     if (!/^https?:/i.test(last.href) || last.href.includes('#') || last.href === location.href) return;
     last.fallback = true;
     await saveJob();
@@ -678,12 +759,13 @@
       sendResponse(debugReport());
       return;
     }
+    note(`tin ${msg.type} ${msg.jobId === job?.id ? 'khớp' : `lệch (job=${job?.id || 'chưa có'}, loaded=${jobLoaded})`}`);
     if (!job || msg.jobId !== job.id) return;
     if (msg.type === 'va:dlStarted') {
       job.dlStarted = true;
       saveJob();
     } else if (msg.type === 'va:dlComplete' || msg.type === 'va:dlFailed') {
-      finishJob();
+      finishJob(msg.type === 'va:dlComplete' ? 'đã tải xong' : `tải lỗi: ${msg.error || ''}`);
     }
   });
 
@@ -728,6 +810,8 @@
       settings,
       job,
       queueCount,
+      ends,
+      trace,
       url: location.href,
       readyState: document.readyState,
       settled: pageSettled(),
@@ -746,37 +830,44 @@
   function tick() {
     if (!settings.enabled || !document.body) return;
     scan = scanPage();
-    if (!scan.busyModal) busyAfterStop = false;
-    const hidden = document.hidden; // Cửa sổ đang thu nhỏ/ẩn: không tính giờ hết hạn, chờ tới khi mở lên
-    if (job && !hidden && Date.now() - job.startedAt > JOB_TTL_MS) finishJob();
+    // Cửa sổ đang thu nhỏ/ẩn: nếu không còn ảnh nào khác chờ thì đợi tới khi mở lên (không huỷ vì quá
+    // giờ); còn ảnh khác chờ thì vẫn có giới hạn, để một ảnh hỏng không chặn cả hàng.
+    const hidden = document.hidden;
+    const othersWaiting = queueCount - (job?.itemId != null ? 1 : 0) > 0;
+    if (job && (!hidden || othersWaiting) && Date.now() - job.startedAt > JOB_TTL_MS) finishJob('quá 10 phút');
     if (job && !job.leftStart && normUrl(location.href) !== job.startUrl) {
       job.leftStart = true;
       saveJob();
     }
     if (job && scan.busyModal) {
       sawBusyHere = true;
-      if (!job.sawBusy) {
+      const paths = job.busyPaths || [];
+      const onStart = normUrl(location.href) === job.startUrl;
+      if (!job.sawBusy || !paths.includes(location.pathname) || (onStart && !job.busyOnStart)) {
         job.sawBusy = true;
+        job.busyPaths = [...paths, location.pathname].filter((p, i, a) => a.indexOf(p) === i).slice(-10);
+        if (onStart) job.busyOnStart = true;
         saveJob();
       }
     }
     if (settings.autoPrecrop) handlePrecrop();
-    // Bảng tiến trình hiện ra giữa chừng mà chưa có job (vd. tải ảnh bằng cách khác) → nhận việc.
-    // Bảng hiện ngay lúc vừa mở trang (mở lại ảnh cũ, tải lại trang) thì không tính.
-    if (!job && jobLoaded && scan.busyModal && !busyAfterStop && Date.now() - startedAt > 3000
-      && Date.now() - stoppedAt > STOP_COOLDOWN_MS) startJob('ảnh');
-    // Đã bấm mà chưa có file: hết hạn sau DOWNLOAD_CONFIRM_MS tính từ lần bấm cuối (lúc ẩn thì chờ).
-    if (job && job.stage === 'downloading' && !hidden
-      && Date.now() - job.clickedAt > DOWNLOAD_CONFIRM_MS) finishJob();
-    // Còn tiến triển: có bảng Pre-Crop / bảng xử lý, đang đưa ảnh vào, đã bấm tải, cửa sổ đang ẩn…
-    if (job && (hidden || scan.precropHeading || scan.busyModal || job.stage === 'downloading'
+    // Đã bấm mà chưa có file: hết hạn sau DOWNLOAD_CONFIRM_MS tính từ lần bấm cuối. Lúc ẩn: chờ tới khi
+    // mở lên, hoặc tối đa HIDDEN_DL_CAP_MS nếu còn ảnh khác chờ.
+    if (job && job.stage === 'downloading') {
+      const limit = !hidden ? DOWNLOAD_CONFIRM_MS : othersWaiting ? HIDDEN_DL_CAP_MS : Infinity;
+      if (Date.now() - job.clickedAt > limit) finishJob('bấm rồi mà không có file');
+    }
+    if (job) checkMiss();
+    // Còn tiến triển: có bảng Pre-Crop / bảng xử lý, đang đưa ảnh vào, đã bấm tải… (cửa sổ ẩn không tính:
+    // các dấu hiệu trên vẫn thấy được lúc ẩn, nên ảnh hỏng vẫn bị bỏ để hàng chờ chạy tiếp).
+    if (job && (scan.precropHeading || scan.busyModal || job.stage === 'downloading'
       || (job.feed && !job.feed.ok))) progressAt = Date.now();
     // Lưu mốc đó kèm việc (vài giây một lần) để sang trang khác vẫn biết ảnh đã đứng yên bao lâu.
     if (job && progressAt - (job.progressAt || 0) > 2000) {
       job.progressAt = progressAt;
       saveJob();
     }
-    if (job && job.stage === 'waiting' && Date.now() - progressAt > STALL_MS) finishJob();
+    if (job && job.stage === 'waiting' && Date.now() - progressAt > STALL_MS) finishJob('đứng yên quá lâu');
     if (job && job.feed && !job.feed.ok) {
       handleFeed(); // Chưa chắc trang đã nhận ảnh → chưa bấm gì khác
     } else if (job && settings.autoDownload) {

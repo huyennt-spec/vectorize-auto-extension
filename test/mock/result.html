@@ -51,6 +51,8 @@
       document.getElementById('busy').hidden = true;
       document.getElementById('progress').style.display = 'none';
       dl.href = dlHref(newId);
+      // Chế độ 'redirect': xử lý xong web chuyển sang địa chỉ chuẩn của ảnh (tải lại trang).
+      if (mode === 'redirect' && !location.search.includes('v=2')) location.replace(location.pathname + '?v=2');
     }, ms);
   }
   // Bấm CANCEL: đóng bảng; nút DOWNLOAD vẫn bấm được (trường hợp xấu nhất).

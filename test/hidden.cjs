@@ -56,14 +56,20 @@ async function evaluate(conn, expression) {
   // Máy chủ HTTPS giả làm vectorizer.ai (chứng chỉ tự ký, tạo lúc chạy).
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=vectorizer.ai', '-days', '1',
     '-keyout', path.join(dir, 'key.pem'), '-out', path.join(dir, 'cert.pem')], { stdio: 'ignore' });
+  const requests = {}; // Số lần trang xin mỗi file
+  let slowMs = 0;      // Máy chủ trả file chậm bấy lâu
   const server = https.createServer({
     key: fs.readFileSync(path.join(dir, 'key.pem')), cert: fs.readFileSync(path.join(dir, 'cert.pem')),
   }, (req, res) => {
     const url = new URL(req.url, 'https://vectorizer.ai');
     if (url.pathname.startsWith('/download/')) {
+      requests[url.pathname] = (requests[url.pathname] || 0) + 1;
       const name = decodeURIComponent(url.pathname.split('-').slice(1).join('-')).replace(/\.png$/, '.svg');
-      res.writeHead(200, { 'content-type': 'image/svg+xml', 'content-disposition': `attachment; filename="${name}"` });
-      return res.end('<svg xmlns="http://www.w3.org/2000/svg"/>');
+      const send = () => {
+        res.writeHead(200, { 'content-type': 'image/svg+xml', 'content-disposition': `attachment; filename="${name}"` });
+        res.end('<svg xmlns="http://www.w3.org/2000/svg"/>');
+      };
+      return slowMs ? void setTimeout(send, slowMs) : send();
     }
     const file = !url.pathname.startsWith('/images/') ? 'index.html'
       : url.pathname.endsWith('/download') ? 'download.html' : 'result.html';
@@ -76,11 +82,9 @@ async function evaluate(conn, expression) {
   fs.mkdirSync(downloadsDir);
   fs.mkdirSync(path.join(dir, 'profile', 'Default'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'profile', 'Default', 'Preferences'),
-    JSON.stringify({
-      download: { default_directory: downloadsDir, prompt_for_download: false },
-      // Như máy người dùng đã chọn "Cho phép tải nhiều tệp" cho trang này.
-      profile: { content_settings: { exceptions: { automatic_downloads: { 'https://vectorizer.ai:443,*': { setting: 1 } } } } },
-    }));
+    // Không đặt sẵn quyền "Tải xuống nhiều tệp": extension phải tự cho phép, nếu không từ file thứ hai
+    // Chrome giữ file lại và hỏi (cửa sổ ẩn thì không ai thấy để bấm).
+    JSON.stringify({ download: { default_directory: downloadsDir, prompt_for_download: false } }));
   const debugPort = 9200 + Math.floor(Math.random() * 700);
   const browser = spawn(chromium.executablePath(), [
     `--remote-debugging-port=${debugPort}`, `--user-data-dir=${path.join(dir, 'profile')}`,
@@ -152,7 +156,8 @@ async function evaluate(conn, expression) {
     await waitFor(async () => files().length === 2, 20000, 'tải sau khi hiện lại').catch(async (e) => {
       console.log(JSON.stringify(await evaluate(sw, `(async () => {
         const [tab] = await chrome.tabs.query({ url: 'https://vectorizer.ai/*' });
-        return { session: await chrome.storage.session.get(null),
+        return { ends: (await chrome.storage.session.get('ends')).ends, autoDl: await new Promise((r) => chrome.contentSettings.automaticDownloads.get({ primaryUrl: 'https://vectorizer.ai/' }, r)),
+          session: await chrome.storage.session.get(null),
           report: await chrome.tabs.sendMessage(tab.id, { type: 'va:debug' }).catch((x) => String(x)) };
       })()`), null, 1).slice(0, 4000));
       throw e;
@@ -169,6 +174,55 @@ async function evaluate(conn, expression) {
     await sleep(4000);
     assert.deepStrictEqual(files(), ['an.svg', 'lau.svg', 'vis.svg'], 'đúng 3 file, không trùng');
     console.log('✔ 3. Ảnh tiếp theo cũng xong trong lúc ẩn');
+
+    const reqs = (name) => Object.entries(requests).filter(([k]) => k.endsWith(`-${name}`)).reduce((n, [, v]) => n + v, 0);
+    const dropMany = (names) => onPage(`(() => {
+      const dt = new DataTransfer();
+      for (const n of ${JSON.stringify(names)}) dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], n, { type: 'image/png' }));
+      const target = document.getElementById('drop') || document.body;
+      for (const type of ['dragenter', 'dragover', 'drop']) {
+        target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
+      }
+    })()`);
+
+    // 4) Kéo 2 ảnh, ảnh đầu bị web báo lỗi; cửa sổ ẩn suốt: ảnh lỗi bị bỏ, ảnh sau vẫn làm xong.
+    await show();
+    await waitFor(async () => !(await isHidden()), 5000, 'tab hiện lại');
+    await goHome('');
+    await dropMany(['err-a.png', 'ok-b.png']);
+    await hide();
+    await waitFor(isHidden, 5000, 'tab bị ẩn');
+    await waitFor(async () => files().includes('ok-b.svg'), 120000, 'ảnh sau ảnh lỗi');
+    assert.ok(await isHidden(), 'vẫn đang ẩn');
+    console.log('✔ 4. Ảnh lỗi không chặn hàng chờ lúc cửa sổ ẩn');
+
+    // 5) Nút OK của Pre-Crop khoá 6 giây lúc cửa sổ ẩn: không bấm phí, mở khoá là bấm, tải xong.
+    await show();
+    await waitFor(async () => !(await isHidden()), 5000, 'tab hiện lại');
+    await goHome('pcguard');
+    await drop('big-pc.png');
+    await hide();
+    await waitFor(isHidden, 5000, 'tab bị ẩn');
+    await waitFor(async () => files().includes('big-pc.svg'), 40000, 'Pre-Crop khoá rồi mở');
+    console.log('✔ 5. Pre-Crop OK bị khoá lúc ẩn: chờ mở khoá rồi bấm');
+
+    // 6) Mở cửa sổ lên đúng lúc file đang tải chậm: không bấm lại, không có file trùng.
+    await show();
+    await waitFor(async () => !(await isHidden()), 5000, 'tab hiện lại');
+    await goHome('');
+    slowMs = 9000;
+    await drop('mo-len.png');
+    await hide();
+    await waitFor(isHidden, 5000, 'tab bị ẩn');
+    await waitFor(async () => reqs('mo-len.png') > 0, 30000, 'bắt đầu xin file');
+    await sleep(2000);
+    await show();
+    await waitFor(async () => files().includes('mo-len.svg'), 30000, 'file chậm về');
+    await sleep(5000);
+    assert.strictEqual(reqs('mo-len.png'), 1, `số lần xin file: ${reqs('mo-len.png')}`);
+    assert.strictEqual(files().filter((f) => f.startsWith('mo-len')).length, 1, `file trùng: ${files().join(', ')}`);
+    slowMs = 0;
+    console.log('✔ 6. Mở cửa sổ lúc file đang tải chậm: không tải trùng');
 
     sw.close();
     page.close();

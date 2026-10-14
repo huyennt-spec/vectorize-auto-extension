@@ -5,6 +5,7 @@ importScripts('shared.js');
 const VEC_URL_RX = /^(blob:)?https:\/\/([a-z0-9-]+\.)*vectorizer\.ai(\/|$)/i;
 const CLAIM_WINDOW_MS = 60 * 1000; // File về trong vòng 60 giây sau khi bấm thì tính là của ảnh đó
 const ANY_URL_WINDOW_MS = 15 * 1000; // File từ địa chỉ lạ chỉ tính nếu về trong 15 giây
+const DUP_WINDOW_MS = 2 * 60 * 1000; // File trùng địa chỉ với file vừa tải trong bấy lâu → bản trùng
 
 // Service worker có thể bị tắt bất cứ lúc nào nên trạng thái lưu ở storage.session.
 // Các thao tác đọc-sửa-ghi chạy lần lượt để không ghi đè lẫn nhau.
@@ -27,7 +28,19 @@ const basename = (p) => (p || '').split(/[\\/]/).pop();
 const PAGE_PATTERNS = chrome.runtime.getManifest().content_scripts[0].matches;
 const CONTENT_FILES = chrome.runtime.getManifest().content_scripts[0].js;
 
+// Cho phép trang tự tải nhiều file liên tiếp. Nếu không, từ file thứ hai Chrome giữ file lại và hỏi
+// "Tải xuống nhiều tệp" — cửa sổ đang thu nhỏ nên bạn không thấy để bấm Cho phép.
+function allowAutomaticDownloads() {
+  for (const primaryPattern of PAGE_PATTERNS) {
+    try {
+      chrome.contentSettings?.automaticDownloads?.set({ primaryPattern, setting: 'allow' }, () => void chrome.runtime.lastError);
+    } catch {}
+  }
+}
+chrome.runtime.onStartup.addListener(allowAutomaticDownloads);
+
 chrome.runtime.onInstalled.addListener(async () => {
+  allowAutomaticDownloads();
   const tabs = await chrome.tabs.query({ url: PAGE_PATTERNS });
   for (const tab of tabs) {
     chrome.scripting.executeScript({ target: { tabId: tab.id }, files: CONTENT_FILES }).catch(() => {});
@@ -65,8 +78,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       tabId,
       bootId: await getBootId(),
       job: (await chrome.storage.session.get(jobKey(tabId)))[jobKey(tabId)] || null,
+      ends: (await chrome.storage.session.get('ends')).ends || [],
     })).then((r) => sendResponse(r), () => sendResponse({ tabId, bootId: '', job: null }));
     return true;
+  }
+  if (msg?.type === 'va:ended') { // Lý do kết thúc các ảnh gần đây (để tìm lỗi)
+    chrome.storage.session.set({ ends: msg.ends }).catch(() => {});
+    return;
   }
   if (msg?.type === 'va:minimize') {
     chrome.windows.update(sender.tab.windowId, { state: 'minimized' }).catch(() => {});
@@ -100,13 +118,22 @@ chrome.downloads.onCreated.addListener((item) => serial(async () => {
     if (!fromVectorizer && age > ANY_URL_WINDOW_MS) continue;
     if (!best || p.at > best.at) best = { ...p, tabId: Number(tabId) };
   }
+  const url = item.finalUrl || item.url;
+  const { claimed = [] } = await chrome.storage.session.get('claimed');
+  const recent = claimed.filter((c) => now - c.at < DUP_WINDOW_MS);
   if (!best) {
-    await chrome.storage.session.set({ pending });
+    await chrome.storage.session.set({ pending, claimed: recent });
+    // Lưới an toàn: cùng file của một ảnh vừa tải (vd. các lần bấm Chrome giữ lại rồi thả ra một lúc)
+    // → huỷ bản trùng để không có "tên (1).svg".
+    if (fromVectorizer && url && recent.some((c) => c.url === url)) {
+      chrome.downloads.cancel(item.id).then(() => chrome.downloads.erase({ id: item.id })).catch(() => {});
+    }
     return;
   }
   delete pending[best.tabId];
   dlmap[item.id] = { tabId: best.tabId, jobId: best.jobId };
-  await chrome.storage.session.set({ pending, dlmap });
+  recent.push({ url, jobId: best.jobId, at: now });
+  await chrome.storage.session.set({ pending, dlmap, claimed: recent });
   notifyTab(best.tabId, { type: 'va:dlStarted', jobId: best.jobId });
   if (item.state === 'complete') await finish(item.id, 'complete');
 }));

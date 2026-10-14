@@ -164,14 +164,13 @@ async function drop(page, names) {
   assert.strictEqual(downloads[5], 'overlay.svg');
   console.log('✔ 7c. Nút bị lớp trong suốt phủ vẫn bấm được');
 
-  // 7d) Bảng Upload/Process/Fetch hiện ra giữa chừng mà không có kéo/thả → vẫn tự làm
+  // 7d) Mở lại ảnh cũ rồi chỉnh gì đó: web xử lý lại (bảng Upload/Process/Fetch) mà bạn không kéo
+  //     ảnh nào vào → không được tự tải.
   await page.goto(`${HOME}images/790-old.png`);
   await sleep(3500);
   await page.evaluate(() => window.__reprocess('silent.png'));
-  await waitFor(() => downloads.length === 7, 15000, 'tải file silent');
-  assert.strictEqual(downloads[6], 'silent.svg');
-  await expectCount(7, 3000);
-  console.log('✔ 7d. Nhận việc từ bảng tiến trình');
+  await expectCount(6, 8000);
+  console.log('✔ 7d. Web xử lý lại ảnh cũ (không kéo ảnh) thì không tự tải');
 
   // 8) Popup hỏi trạng thái / thông tin lỗi
   assert.ok((await askTab({ type: 'va:ping' })).ok);
@@ -187,8 +186,8 @@ async function drop(page, names) {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/shared.js', 'src/content.js'] });
   });
   await drop(page, 'big-reinject.png');
-  await waitFor(() => downloads.length === 8, 15000, 'tải file 8');
-  await expectCount(8, 4000);
+  await waitFor(() => downloads.length === 7, 15000, 'tải file 8');
+  await expectCount(7, 4000);
   console.log('✔ 9. Chèn script lại không bị chạy đôi');
 
   // 10b) Kéo ảnh lớn vào trang Download của ảnh cũ: Pre-Crop → OK → web thu nhỏ ảnh vài giây,
@@ -196,13 +195,13 @@ async function drop(page, names) {
   await page.goto(HOME);
   await sleep(500);
   await drop(page, 'cu.png');
-  await waitFor(() => downloads.length === 9, 15000, 'tải ảnh cũ');
+  await waitFor(() => downloads.length === 8, 15000, 'tải ảnh cũ');
   await page.waitForURL(/\/download$/, { timeout: 5000 });
   await sleep(1500);
   await drop(page, 'big-moi.png');
-  await waitFor(() => downloads.length === 10, 20000, 'tải ảnh mới');
-  assert.strictEqual(downloads[9], 'big-moi.svg', `tải nhầm: ${downloads[9]}`);
-  await expectCount(10, 4000);
+  await waitFor(() => downloads.length === 9, 20000, 'tải ảnh mới');
+  assert.strictEqual(downloads[8], 'big-moi.svg', `tải nhầm: ${downloads[8]}`);
+  await expectCount(9, 4000);
   console.log('✔ 10b. Kéo ảnh mới vào trang Download cũ: không tải lại ảnh cũ');
 
   // 11) Thao tác nhanh: thả ảnh khi ảnh trước chưa xong, thả nhiều ảnh một lúc → làm lần lượt, không lẫn
@@ -215,9 +214,9 @@ async function drop(page, names) {
   await drop(page, 'q4.png');
   await sleep(500);
   assert.strictEqual((await askTab({ type: 'va:ping' })).waiting, 3);
-  await waitFor(() => downloads.length === 14, 90000, 'tải hết hàng chờ');
-  assert.deepStrictEqual(downloads.slice(10), ['q1.svg', 'big-q2.svg', 'q3.svg', 'q4.svg']);
-  await expectCount(14, 4000);
+  await waitFor(() => downloads.length === 13, 90000, 'tải hết hàng chờ');
+  assert.deepStrictEqual(downloads.slice(9), ['q1.svg', 'big-q2.svg', 'q3.svg', 'q4.svg']);
+  await expectCount(13, 4000);
   assert.strictEqual((await askTab({ type: 'va:ping' })).waiting, 0);
   console.log('✔ 11. Hàng chờ: làm lần lượt từng ảnh, đúng thứ tự');
 
@@ -229,7 +228,7 @@ async function drop(page, names) {
   await drop(page, ['q6.png', 'q7.png']);
   await page.waitForURL(/\/images\//, { timeout: 8000 });
   await page.keyboard.press('Escape');
-  await expectCount(14, 8000);
+  await expectCount(13, 8000);
   assert.strictEqual((await askTab({ type: 'va:ping' })).waiting, 0);
   console.log('✔ 12. Esc dừng cả hàng chờ');
 
@@ -239,8 +238,8 @@ async function drop(page, names) {
   await sleep(500);
   await drop(page, 'mini.png');
   await waitFor(async () => (await windowStates()).includes('minimized'), 5000, 'thu nhỏ cửa sổ');
-  await waitFor(() => downloads.length === 15, 30000, 'tải lúc thu nhỏ');
-  assert.strictEqual(downloads[14], 'mini.svg');
+  await waitFor(() => downloads.length === 14, 30000, 'tải lúc thu nhỏ');
+  assert.strictEqual(downloads[13], 'mini.svg');
   await sw.evaluate(() => chrome.windows.getAll().then((ws) => Promise.all(
     ws.map((w) => chrome.windows.update(w.id, { state: 'normal' })))));
   await setSettings({ minimize: false });
@@ -252,7 +251,7 @@ async function drop(page, names) {
   await sleep(500);
   await drop(page, 'small-off.png');
   await page.waitForURL(/\/images\//, { timeout: 8000 });
-  await expectCount(15, 5000);
+  await expectCount(14, 5000);
   console.log('✔ 14. Tắt extension thì không bấm');
 
   await context.close();

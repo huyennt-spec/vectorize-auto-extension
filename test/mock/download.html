@@ -39,14 +39,19 @@
     </div>
   </div>
 <script>
-  // Chế độ thử (test đặt trong localStorage): '' | late | defer | visonly | query | churn | fade
+  // Chế độ thử (test đặt trong localStorage): '' | late | defer | visonly | prep | query | churn | fade
   const mode = localStorage.getItem('mockMode') || '';
   const id = new URLSearchParams(location.search).get('img') || location.pathname.split('/')[2];
   document.getElementById('name').textContent = decodeURIComponent(id.split('-').slice(1).join('-'));
   const fileUrl = '/download/' + id;
   window.__mainClicks = 0;
   document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('#main')) window.__mainClicks++; }, true);
-  if (mode === 'late' || mode === 'defer' || mode === 'visonly') {
+  if (mode === 'prep') {
+    // Bấm xong trang "chuẩn bị file" 8 giây rồi mới tải (nút vẫn ghi Download, không bị khoá).
+    for (const a of document.querySelectorAll('a.btn')) {
+      a.addEventListener('click', (e) => { e.preventDefault(); setTimeout(() => { location.href = fileUrl; }, 8000); });
+    }
+  } else if (mode === 'late' || mode === 'defer' || mode === 'visonly') {
     // Như web thật: nút là <a href="#">, script của trang gắn việc cho nút sau; bấm sớm thì hụt (chỉ thêm '#').
     window.__wire = () => {
       for (const a of document.querySelectorAll('a.btn')) {
