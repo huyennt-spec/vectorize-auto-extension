@@ -1,18 +1,23 @@
 {
   "manifest_version": 3,
-  "name": "Auto Click",
-  "version": "1.6.1",
-  "description": "Kéo ảnh vào là xong: tự bấm OK và Download, tải file về máy.",
+  "name": "Today Auto Click",
+  "short_name": "Auto Click",
+  "version": "2.0.0",
+  "description": "Hệ sinh thái Today — kéo ảnh vào là xong: tự bấm OK và Download, tải file về máy. Quản trị cấp quyền dùng.",
   "minimum_chrome_version": "102",
   "permissions": [
     "storage",
     "downloads",
     "scripting",
-    "contentSettings"
+    "contentSettings",
+    "alarms"
   ],
   "host_permissions": [
     "https://vectorizer.ai/*",
-    "https://*.vectorizer.ai/*"
+    "https://*.vectorizer.ai/*",
+    "https://identitytoolkit.googleapis.com/*",
+    "https://securetoken.googleapis.com/*",
+    "https://today-pod-hub-default-rtdb.asia-southeast1.firebasedatabase.app/*"
   ],
   "background": {
     "service_worker": "src/background.js"
@@ -31,7 +36,7 @@
     }
   ],
   "action": {
-    "default_title": "Auto Click",
+    "default_title": "Today Auto Click",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -39,6 +44,10 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
   },
   "icons": {
     "16": "icons/icon16.png",

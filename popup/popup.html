@@ -2,46 +2,86 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8">
-  <title>Auto Click</title>
+  <title>Today Auto Click</title>
+  <link rel="stylesheet" href="../ui/today.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header>
-    <img src="../icons/icon32.png" alt="" width="24" height="24">
-    <h1>Auto Click</h1>
+  <header class="brand top">
+    <img src="../icons/today.svg" alt="">
+    <div>
+      <div class="brand-name">Today <b>Auto Click</b></div>
+      <div class="brand-sub">Hệ sinh thái Today</div>
+    </div>
+    <span class="version" id="version"></span>
   </header>
 
-  <label class="row main">
-    <span>Bật tự động</span>
-    <input type="checkbox" id="enabled">
-  </label>
+  <!-- Đang kiểm tra -->
+  <section id="viewLoading" class="card center muted">Đang kiểm tra tài khoản…</section>
 
-  <fieldset id="opts">
-    <label class="row">
-      <span>Tự bấm <b>OK</b> ở bảng Pre-Crop</span>
-      <input type="checkbox" id="autoPrecrop">
-    </label>
-    <label class="row">
-      <span>Tự bấm <b>DOWNLOAD</b> khi có kết quả</span>
-      <input type="checkbox" id="autoDownload">
-    </label>
-    <label class="row">
-      <span>Nhận ảnh xong tự thu nhỏ cửa sổ</span>
-      <input type="checkbox" id="minimize">
-    </label>
-  </fieldset>
-
-  <div class="status" id="status">Đang kiểm tra trang…</div>
-
-  <section class="stats">
-    <div><span id="today">0</span> file hôm nay · <span id="total">0</span> file tổng</div>
-    <div class="last" id="last"></div>
+  <!-- Chưa đăng nhập -->
+  <section id="viewLogin" class="card" hidden>
+    <h2>Đăng nhập Today</h2>
+    <p class="lead">Dùng tài khoản Today do quản trị cấp.</p>
+    <form id="loginForm" autocomplete="on">
+      <label class="field"><span>Tên đăng nhập</span>
+        <input class="input" id="username" name="username" autocomplete="username" required></label>
+      <label class="field"><span>Mật khẩu</span>
+        <input class="input" id="password" name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn btn-primary btn-block" id="loginBtn" type="submit">Đăng nhập</button>
+      <p class="error" id="loginError"></p>
+    </form>
   </section>
 
-  <p class="hint">Chỉ cần kéo ảnh vào, phần còn lại tự làm. Bấm CANCEL hoặc Esc để dừng.</p>
-  <button id="debug" class="link" hidden>Sao chép thông tin lỗi</button>
+  <!-- Chưa kết nối máy chủ -->
+  <section id="viewNoServer" class="card" hidden>
+    <h2>Chưa kết nối máy chủ Today</h2>
+    <p class="lead">Bản cài này chưa được quản trị cấu hình. Liên hệ quản trị để nhận bản đúng.</p>
+  </section>
+
+  <!-- Đã đăng nhập -->
+  <section id="viewMain" hidden>
+    <div class="card account">
+      <div class="avatar" id="avatar"></div>
+      <div class="who">
+        <div class="name" id="displayName"></div>
+        <div class="dim" id="userMeta"></div>
+      </div>
+      <span class="chip" id="accessChip"></span>
+    </div>
+
+    <div class="notice" id="notice" hidden></div>
+
+    <div class="card" id="settingsCard">
+      <div class="section-title">Tự động</div>
+      <label class="row"><span class="label">Bật tự động</span>
+        <span class="switch"><input type="checkbox" id="enabled"><i></i></span></label>
+      <label class="row"><span class="label">Tự bấm <b>OK</b> ở bảng Pre-Crop</span>
+        <span class="switch"><input type="checkbox" id="autoPrecrop"><i></i></span></label>
+      <label class="row"><span class="label">Tự bấm <b>DOWNLOAD</b> khi có kết quả</span>
+        <span class="switch"><input type="checkbox" id="autoDownload"><i></i></span></label>
+      <label class="row"><span class="label">Nhận ảnh xong tự thu nhỏ cửa sổ</span>
+        <span class="switch"><input type="checkbox" id="minimize"><i></i></span></label>
+    </div>
+
+    <div class="card stats">
+      <div><span id="today">0</span><small>hôm nay</small></div>
+      <div><span id="total">0</span><small>tổng cộng</small></div>
+      <div class="page"><span class="dot" id="pageDot"></span><small id="status">Đang kiểm tra trang…</small></div>
+    </div>
+    <div class="last dim" id="last"></div>
+
+    <footer class="actions">
+      <button class="btn btn-sm" id="openAdmin" hidden>Quản trị</button>
+      <button class="btn btn-sm" id="openAccount">Tài khoản</button>
+      <button class="btn btn-sm btn-danger" id="signOut">Đăng xuất</button>
+    </footer>
+    <button class="link debug" id="debug" hidden>Sao chép thông tin lỗi</button>
+  </section>
 
   <script src="../src/shared.js"></script>
+  <script src="../src/today-config.js"></script>
+  <script src="../src/today.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
