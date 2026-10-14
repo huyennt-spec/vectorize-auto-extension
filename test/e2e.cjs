@@ -5,7 +5,6 @@ const fs = require('fs');
 const os = require('os');
 const assert = require('assert');
 const { chromium } = require('playwright');
-const today = require('./today-server.cjs');
 
 const EXT = path.resolve(__dirname, '..');
 const MOCK = path.join(__dirname, 'mock');
@@ -60,8 +59,6 @@ async function drop(page, names) {
 
   let [sw] = context.serviceWorkers();
   if (!sw) sw = await context.waitForEvent('serviceworker');
-  await today.ready();
-  assert.ok((await today.signInExtension(sw, 'tester')).allowed, 'tài khoản thử phải được phép');
   const setSettings = (s) => sw.evaluate((v) => chrome.storage.sync.set(v), s);
   const stats = () => sw.evaluate(() => chrome.storage.local.get('stats').then((r) => r.stats || {}));
   const askTab = (msg) => sw.evaluate(async (m) => {

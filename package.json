@@ -1,15 +1,13 @@
 {
-  "name": "today-auto-click",
-  "version": "2.0.0",
+  "name": "vectorizer-auto-click",
+  "version": "1.6.1",
   "private": true,
-  "description": "Today Auto Click — Chrome extension trong hệ sinh thái Today",
+  "description": "Chrome extension: tự bấm OK (Pre-Crop) và DOWNLOAD trên Vectorizer.AI",
   "scripts": {
-    "test": "node test/e2e.cjs && node test/variants.cjs && node test/today.cjs",
-    "test:hidden": "xvfb-run -a node test/hidden.cjs",
-    "test:today": "node test/today.cjs"
+    "test": "node test/e2e.cjs && node test/variants.cjs",
+    "test:hidden": "xvfb-run -a node test/hidden.cjs"
   },
   "devDependencies": {
-    "playwright": "1.56.1",
-    "firebase-tools": "15.33.0"
+    "playwright": "1.56.1"
   }
 }

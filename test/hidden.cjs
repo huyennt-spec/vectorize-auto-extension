@@ -8,7 +8,6 @@ const os = require('os');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const { chromium } = require('playwright');
-const today = require('./today-server.cjs');
 
 const EXT = path.resolve(__dirname, '..');
 const MOCK = path.join(__dirname, 'mock');
@@ -129,8 +128,6 @@ async function evaluate(conn, expression) {
       await sleep(500);
     };
 
-    await today.ready();
-    assert.ok((await today.signInExtension((expr) => evaluate(sw, expr), 'tester')).allowed, 'tài khoản thử phải được phép');
     await evaluate(sw, 'chrome.storage.sync.set({ minimize: false })');
     await waitFor(() => onPage('document.readyState === "complete"'), 10000, 'trang chủ');
 

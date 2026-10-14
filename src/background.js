@@ -1,6 +1,6 @@
-// Theo dõi file tải về sau khi content script bấm DOWNLOAD, báo lại cho đúng tab khi tải xong,
-// đếm số file đã tải, và giữ quyền dùng do quản trị Today cấp (kiểm tra với máy chủ Today).
-importScripts('shared.js', 'today-config.js', 'today.js');
+// Theo dõi file tải về sau khi content script bấm DOWNLOAD, báo lại cho đúng tab
+// khi tải xong (để tab tự quay về trang chính) và đếm số file đã tải.
+importScripts('shared.js');
 
 const VEC_URL_RX = /^(blob:)?https:\/\/([a-z0-9-]+\.)*vectorizer\.ai(\/|$)/i;
 const CLAIM_WINDOW_MS = 60 * 1000; // File về trong vòng 60 giây sau khi bấm thì tính là của ảnh đó
@@ -51,75 +51,6 @@ function notifyTab(tabId, msg) {
   chrome.tabs.sendMessage(tabId, msg).catch(() => {});
 }
 
-// ---------- Quyền dùng (máy chủ Today quyết định) ----------
-// Lưu kết quả kiểm tra gần nhất. Kiểm tra lại mỗi 5 phút, khi đăng nhập/đăng xuất, và khi trang hỏi
-// mà kết quả đã cũ hơn 1 phút. Mất mạng: dùng tạm kết quả "được phép" gần nhất trong 12 giờ.
-const ACCESS_KEY = 'todayAccess';
-const ACCESS_FRESH_MS = 60 * 1000;
-const OFFLINE_GRACE_MS = 12 * 60 * 60 * 1000;
-let accessCheck = null;
-
-async function refreshAccess() {
-  const { [ACCESS_KEY]: prev } = await chrome.storage.local.get(ACCESS_KEY);
-  let next;
-  try {
-    next = await TodayClient.checkAccess();
-  } catch (e) {
-    if (e.code === 'network' && prev?.allowed && Date.now() - (prev.verifiedAt || 0) < OFFLINE_GRACE_MS) {
-      next = { ...prev, offline: true };
-    } else {
-      next = { allowed: false, reason: e.code === 'network' ? 'offline' : 'error', error: e.code || String(e), user: prev?.user };
-    }
-  }
-  next.checkedAt = Date.now();
-  if (next.allowed && !next.offline) delete next.offline;
-  await chrome.storage.local.set({ [ACCESS_KEY]: next });
-  if (!prev || prev.allowed !== next.allowed || prev.reason !== next.reason) broadcastAccess(next);
-  return next;
-}
-
-function getAccess(force = false) {
-  accessCheck ??= (async () => {
-    const { [ACCESS_KEY]: cached } = await chrome.storage.local.get(ACCESS_KEY);
-    if (!force && cached && Date.now() - (cached.checkedAt || 0) < ACCESS_FRESH_MS) return cached;
-    return refreshAccess();
-  })().finally(() => { accessCheck = null; });
-  return accessCheck;
-}
-
-async function broadcastAccess(access) {
-  const tabs = await chrome.tabs.query({ url: PAGE_PATTERNS }).catch(() => []);
-  for (const tab of tabs) notifyTab(tab.id, { type: 'va:access', access });
-}
-
-// Tạo một lần (tạo lại mỗi lần service worker thức dậy sẽ đẩy lùi giờ chạy mãi).
-chrome.alarms.get('today-access').then((a) => a || chrome.alarms.create('today-access', { periodInMinutes: 5 }));
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'today-access') refreshAccess(); });
-
-// Trang của chính extension (popup, trang Tài khoản & Quản trị — trang này mở trong tab nên có sender.tab).
-const EXT_ORIGIN = chrome.runtime.getURL('');
-const fromExtensionPage = (sender) => (sender.url || '').startsWith(EXT_ORIGIN);
-
-// Tin nhắn từ popup / trang cài đặt.
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!fromExtensionPage(sender)) return;
-  if (msg?.type === 'va:today:signin') {
-    TodayClient.signIn(msg.username, msg.password)
-      .then(() => getAccess(true))
-      .then((access) => sendResponse({ ok: true, access }),
-        (e) => sendResponse({ ok: false, error: e.code || String(e), text: TodayClient.errorText(e) }));
-    return true;
-  }
-  if (msg?.type === 'va:today:signout') {
-    TodayClient.signOut().then(() => getAccess(true)).then((access) => sendResponse({ ok: true, access }));
-    return true;
-  }
-  if (msg?.type === 'va:today:access') {
-    getAccess(!!msg.force).then((access) => sendResponse(access));
-    return true;
-  }
-});
-
 // Việc đang làm của từng tab được giữ ở đây (không phụ thuộc bộ nhớ của trang), nên
 // trang có chuyển đi đâu trong cùng cửa sổ thì vẫn nhớ đang chờ tải ảnh nào.
 const jobKey = (tabId) => `job:${tabId}`;
@@ -141,11 +72,7 @@ async function setJob(tabId, job) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabId = sender.tab?.id;
-  if (tabId === undefined || fromExtensionPage(sender)) return;
-  if (msg?.type === 'va:access:get') {
-    getAccess(!!msg.force).then((access) => sendResponse(access), () => sendResponse({ allowed: false, reason: 'error' }));
-    return true;
-  }
+  if (tabId === undefined) return;
   if (msg?.type === 'va:hello') {
     serial(async () => ({
       tabId,
@@ -239,7 +166,6 @@ async function finish(downloadId, state, error) {
 }
 
 async function bumpStats(filename) {
-  TodayClient.reportDownload(); // Cho trang quản trị biết số file đã tải
   const today = new Date().toLocaleDateString('sv'); // YYYY-MM-DD theo giờ máy
   const { stats = {} } = await chrome.storage.local.get('stats');
   const sameDay = stats.day === today;

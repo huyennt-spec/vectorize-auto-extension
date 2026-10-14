@@ -3,7 +3,6 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { chromium } = require('playwright');
-const today = require('./today-server.cjs');
 
 const EXT = path.resolve(__dirname, '..');
 const MOCK = path.join(__dirname, 'mock');
@@ -21,7 +20,7 @@ async function waitFor(fn, ms, what) {
 }
 
 // mock.deferMs > 0: trang Download có script defer /assets/dl-wire.js trả về chậm bấy lâu (như web thật).
-async function launch({ headless = true, signIn = 'tester' } = {}) {
+async function launch({ headless = true } = {}) {
   // slowMs: máy chủ trả file chậm bấy lâu. requests: số lần trang xin mỗi file (để bắt tải trùng / tải lại).
   const mock = { deferMs: 0, slowMs: 0, requests: {} };
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'va-test-'));
@@ -57,12 +56,6 @@ async function launch({ headless = true, signIn = 'tester' } = {}) {
 
   let [sw] = context.serviceWorkers();
   if (!sw) sw = await context.waitForEvent('serviceworker');
-  // Đăng nhập tài khoản Today được phép dùng (máy chủ giả lập), nếu không extension không làm gì.
-  await today.ready();
-  if (signIn) {
-    const access = await today.signInExtension(sw, signIn);
-    if (!access.allowed) throw new Error(`Tài khoản thử không được phép: ${access.reason}`);
-  }
   const page = await context.newPage();
   const downloads = [];
   page.on('download', (d) => downloads.push(d.suggestedFilename()));
@@ -96,4 +89,4 @@ async function launch({ headless = true, signIn = 'tester' } = {}) {
   return t;
 }
 
-module.exports = { launch, sleep, waitFor, HOME, today };
+module.exports = { launch, sleep, waitFor, HOME };

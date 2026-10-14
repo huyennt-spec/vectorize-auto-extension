@@ -80,11 +80,6 @@
   let checkClick = null;     // Lần bấm Download đang chờ xét có hụt không: { key, at }
   const trace = [];          // Nhật ký ngắn các sự kiện gần đây (cho "Sao chép thông tin lỗi")
   const note = (m) => { trace.push(`${(performance.now() / 1000).toFixed(1)} ${m}`); if (trace.length > 40) trace.shift(); };
-  // Quyền dùng do quản trị Today cấp (background hỏi máy chủ Today). Không có quyền thì không làm gì cả:
-  // không giữ ảnh, không bấm nút — trang chạy như bình thường.
-  let access = { allowed: false, known: false };
-  let accessAskedAt = 0;
-  let pendingDropName = null; // Ảnh thả vào lúc chưa biết quyền: biết là được phép thì làm tiếp ảnh đó
   let ends = [];             // 10 lần kết thúc ảnh gần nhất và lý do (cho "Sao chép thông tin lỗi")
 
   // ---------- Cài đặt ----------
@@ -110,38 +105,8 @@
     // → bỏ ảnh đó, không bấm nút trên trang này.
     if (job && job.stage === 'downloading' && !job.dlStarted && !document.hidden
       && Date.now() - job.clickedAt > NAV_WINDOW_MS) finishJob('tự chuyển trang');
-    startPendingDrop();
   }).catch(() => { jobLoaded = true; });
   hello.then(refreshQueue);
-  askAccess();
-
-  function askAccess() {
-    accessAskedAt = Date.now();
-    chrome.runtime.sendMessage({ type: 'va:access:get' }).then(setAccess, () => {});
-  }
-
-  function setAccess(a) {
-    if (!a || ac.signal.aborted) return;
-    const was = access.allowed;
-    access = { ...a, known: true };
-    if (was !== access.allowed) note(`quyền: ${access.allowed ? 'được phép' : access.reason}`);
-    if (!access.allowed) {
-      pendingDropName = null;
-      if (job) stopJob('không có quyền'); // Bị cấm giữa chừng → dừng luôn, bỏ cả hàng chờ
-      return;
-    }
-    startPendingDrop();
-  }
-
-  // Ảnh thả vào lúc chưa biết quyền: khi đã biết được phép và đã nạp việc cũ xong thì làm tiếp ảnh đó.
-  function startPendingDrop() {
-    if (!pendingDropName || !access.allowed || !jobLoaded) return;
-    const name = pendingDropName;
-    pendingDropName = null;
-    if (job) return;
-    startJob(name);
-    minimizeSoon();
-  }
 
   function saveJob() {
     return chrome.runtime.sendMessage({ type: 'va:job:set', job }).catch(() => {});
@@ -198,8 +163,8 @@
   }
 
   // Bạn bấm dừng: bỏ ảnh đang làm và cả hàng chờ.
-  function stopJob(reason = 'bấm dừng') {
-    finishJob(reason);
+  function stopJob() {
+    finishJob('bấm dừng');
     queueOp(async () => qDelete((await qMine()).map((it) => it.id))).then(refreshQueue);
     stoppedAt = Date.now();
     precropAttempts = MAX_PRECROP_CLICKS; // Không bấm OK lại cho bảng đang mở
@@ -214,11 +179,6 @@
     if (feedingNow || !settings.enabled) return;
     const images = files.filter(isImage);
     if (!images.length) return;
-    if (!access.allowed) {
-      // Chưa biết quyền (trang vừa mở): để trang nhận ảnh như thường, biết được phép thì làm tiếp.
-      if (!access.known && !job) pendingDropName = images[0].name;
-      return;
-    }
     // Ảnh đang làm đã đứng yên (vd. bị bỏ dở rồi chuyển trang) → bỏ, nhận ảnh mới luôn.
     if (job && job.stage === 'waiting' && Date.now() - progressAt > STALL_ON_DROP_MS) finishJob('đứng yên, có ảnh mới');
     // Ảnh trước đã bấm tải nhưng cú bấm chắc chắn hụt và đã lâu: bỏ. Còn đang tải (dù chậm) thì để yên,
@@ -790,13 +750,9 @@
   // ---------- Tin nhắn từ background / popup ----------
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (ac.signal.aborted || !msg) return;
-    if (msg.type === 'va:access') {
-      setAccess(msg.access);
-      return;
-    }
     if (msg.type === 'va:ping') {
       const waiting = Math.max(0, queueCount - (job?.itemId != null ? 1 : 0));
-      sendResponse({ ok: true, version: chrome.runtime.getManifest().version, busy: !!job, waiting, allowed: access.allowed });
+      sendResponse({ ok: true, version: chrome.runtime.getManifest().version, busy: !!job, waiting });
       return;
     }
     if (msg.type === 'va:debug') {
@@ -854,7 +810,6 @@
       settings,
       job,
       queueCount,
-      access: { allowed: access.allowed, reason: access.reason, known: access.known },
       ends,
       trace,
       url: location.href,
@@ -873,8 +828,7 @@
 
   // ---------- Vòng lặp ----------
   function tick() {
-    if (Date.now() - accessAskedAt > 60 * 1000) askAccess(); // Hỏi lại quyền mỗi phút (máy chủ có thể vừa cấm)
-    if (!settings.enabled || !document.body || !access.allowed) return;
+    if (!settings.enabled || !document.body) return;
     scan = scanPage();
     // Cửa sổ đang thu nhỏ/ẩn: nếu không còn ảnh nào khác chờ thì đợi tới khi mở lên (không huỷ vì quá
     // giờ); còn ảnh khác chờ thì vẫn có giới hạn, để một ảnh hỏng không chặn cả hàng.
