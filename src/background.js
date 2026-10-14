@@ -91,7 +91,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
   if (msg?.type === 'va:job:set') {
-    serial(() => setJob(tabId, msg.job)).finally(() => sendResponse({ ok: true }));
+    // Việc đã xong (file đã về) thì trang không được ghi lại nó (trang cũ/trang mới có thể còn giữ bản cũ).
+    serial(async () => { if (!msg.job || !(await isDone(msg.job.id))) await setJob(tabId, msg.job); })
+      .finally(() => sendResponse({ ok: true }));
     return true;
   }
   if (msg?.type === 'va:clicked') {
@@ -115,7 +117,8 @@ chrome.downloads.onCreated.addListener((item) => serial(async () => {
   for (const [tabId, p] of Object.entries(pending)) {
     const age = now - p.at;
     if (age > CLAIM_WINDOW_MS) { delete pending[tabId]; continue; }
-    if (!fromVectorizer && age > ANY_URL_WINDOW_MS) continue;
+    // File không từ vectorizer.ai mà có trang gốc khác (vd. bạn tải ảnh ở tab khác) → không phải file của ảnh này.
+    if (!fromVectorizer && (item.referrer || age > ANY_URL_WINDOW_MS)) continue;
     if (!best || p.at > best.at) best = { ...p, tabId: Number(tabId) };
   }
   const url = item.finalUrl || item.url;
@@ -145,12 +148,19 @@ chrome.downloads.onChanged.addListener((delta) => {
   }
 });
 
+// Các việc vừa xong gần đây (để trang không ghi lại việc đã xong).
+async function isDone(jobId) {
+  const { doneIds = [] } = await chrome.storage.session.get('doneIds');
+  return doneIds.includes(jobId);
+}
+
 async function finish(downloadId, state, error) {
   const { dlmap } = await getState();
   const m = dlmap[downloadId];
   if (!m) return;
   delete dlmap[downloadId];
-  await chrome.storage.session.set({ dlmap });
+  const { doneIds = [] } = await chrome.storage.session.get('doneIds');
+  await chrome.storage.session.set({ dlmap, doneIds: [...doneIds, m.jobId].slice(-20) });
   // Xong việc: xoá luôn ở đây, phòng khi trang đang chuyển nên không nhận được tin nhắn.
   const key = jobKey(m.tabId);
   const { [key]: job } = await chrome.storage.session.get(key);

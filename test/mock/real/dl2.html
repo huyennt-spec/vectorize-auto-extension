@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Download - Vectorizer.AI (mock)</title>
+<style>
+  body{font-family:sans-serif;margin:0}
+  .card{margin:20px;padding:20px;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,.15);position:relative}
+  h1{font-size:40px;margin:0}
+  .bttn_blue{position:absolute;right:20px;top:20px;padding:16px 40px;border-radius:12px;background:#3b82f6;color:#fff;text-decoration:none}
+</style>
+<!-- Như web thật: script của trang tải kiểu defer, gắn việc cho nút "#" sau khi trang dựng xong -->
+<script defer src="/m/dlwire.js"></script>
+</head>
+<body>
+  <div class="card">
+    <h1>Download</h1>
+    <p id="name"></p>
+    <a id="Download-Button" class="bttn bttn_blue" href="#"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="> Download</a>
+    <h3>File format</h3><div>SVG PDF DXF EPS PNG</div>
+    <h3>Optimize for</h3><div>General use (default) · Easy editing</div>
+  </div>
+  <script>
+    // dlSlowMs: ảnh xem trước tải chậm → sự kiện load của trang đến muộn.
+    const slow = JSON.parse(localStorage.getItem('appMode') || '{}').dlSlowMs;
+    if (slow) { const i = new Image(); i.src = `/slow?ms=${slow}`; document.querySelector('.card').prepend(i); }
+  </script>
+</body></html>

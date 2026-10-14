@@ -1,0 +1,123 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Vectorizer.AI (real-markup mock)</title>
+<!-- Trang giả lập dựng từ mã HTML thật của web (scratchpad/real/edit.html): bảng Upload/Process/Fetch là
+     .modal của Bootstrap 3, nhãn nằm trong các ô <td> của <table>, nút Cancel ở .modal-footer; bảng Pre-Crop,
+     bảng báo lỗi và nút DOWNLOAD trên thanh công cụ (chữ ẩn dưới 1200 px) giữ nguyên như web thật. -->
+<style>
+  body{margin:0;font-family:sans-serif}
+  .modal{display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:1050;overflow:auto}
+  .modal.in{display:block}
+  .modal-backdrop{position:fixed;top:0;right:0;bottom:0;left:0;z-index:1040;background:#000;opacity:.5}
+  .modal-dialog{position:relative;width:300px;margin:60px auto;background:#fff;border-radius:6px}
+  .modal-body,.modal-footer,.modal-header{padding:12px}
+  .progress{width:150px;height:14px;background:#eee}.progress-bar{height:14px;width:0;background:#4876ff}
+  @media (max-width:767px){.hidden-xs{display:none!important}}
+  @media (min-width:768px) and (max-width:991px){.hidden-sm{display:none!important}}
+  @media (min-width:992px) and (max-width:1199px){.hidden-md{display:none!important}}
+  .showFree{display:none}
+  #drop{margin:20px;height:200px;border:3px dashed #999;display:flex;align-items:center;justify-content:center}
+  #PreCrop-App{display:none}
+  #PreCrop-App.shown{display:block;position:fixed;top:0;left:0;right:0;bottom:0;z-index:1060;background:#fff;overflow:auto}
+  #App-App{display:none}
+  #App-App.on{display:block;position:fixed;top:0;left:0;right:0;bottom:0;z-index:100;background:#fafafa}
+  .Viewer-toolbar{height:40px;background:#fff;display:flex;gap:6px;align-items:center;padding:0 8px}
+  .Viewer-blue_button{background:#4876ff;color:#fff;padding:6px 10px;border:0;border-radius:6px;display:inline-block;text-decoration:none}
+  #Pill{position:absolute;left:50%;bottom:30px;transform:translateX(-50%);padding:14px 40px;border-radius:30px;font-weight:bold}
+  #Pill.off{display:none}
+  #dlview{position:relative;margin:20px;padding:20px;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,.15)}
+  #dlview .bttn_blue{position:absolute;right:20px;top:20px;padding:16px 40px;border-radius:12px;background:#3b82f6;color:#fff;text-decoration:none}
+</style></head>
+<body>
+  <div id="home">
+    <div class="FileInput-click_to_upload app_starter"><div class="drop_target" id="drop">Drag image here</div></div>
+    <input style="display: none;" id="FileInput-Field" type="file" accept="image/*">
+    <!-- 'dlview': trang Download của ảnh trước còn nằm trong trang (dưới lớp ứng dụng) lúc thả ảnh mới -->
+    <div id="dlview" hidden><h1>Download</h1><p>old image</p>
+      <a id="OldDownload" class="bttn bttn_blue" href="#"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="> Download</a>
+      <h3>File format</h3><div>SVG PDF DXF EPS PNG</div></div>
+  </div>
+
+  <div id="App-App">
+    <div class="Viewer-toolbar_container"><div class="Viewer-toolbar"><div class="Viewer-toolbar_white">
+      <button id="App-Toolbar-ZoomIn" title="Zoom in" class="Viewer-clear_button Viewer-button_base">+</button>
+      <a alt="Download" id="App-DownloadLink" href="#" title="Download" class="Viewer-blue_button Viewer-button_base isPaid nowrap"><span style="position: relative;" class="bttn_icon_left"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="Download icon" id="Viewer-DownloadCurrentIcon"></span><span class="hidden-md hidden-sm hidden-xs"> &nbsp;<span class="showPaid">DOWNLOAD</span><span class="showFree">FREE DOWNLOAD</span></span></a>
+    </div></div><button id="App-Toolbar-Exit" title="Exit" class="App-exit_app Viewer-cancel_button Viewer-blue_button Viewer-button_base">×</button></div>
+    <div id="App-ImageView-Pane"><span>Vectorizer.AI Result</span></div>
+  </div>
+
+<div id="PreCrop-App" class="noselect">
+<div id="PreCrop-Inner" class="noselect">
+<div id="PreCrop-Sidebar-Container" class="App-subapp_sidebar">
+<div class="PreCrop-Sidebar-body">
+<button id="PreCrop-TopCloseButton" class="close PreCrop-Sidebar-cancel_button">×</button><h3>Pre-Crop</h3>
+<p style="margin-top: 4px;" class="comment">
+Your image size exceeds the size limit. For best results, please crop the image to the portion you wish to vectorize.
+</p>
+<div style="margin-bottom: 3px;"><h4 style="display: inline-block; margin-right: 7px;">Size Limit </h4><span class="nowrap">3 megapixels</span></div>
+</div>
+<div id="PreCrop-Sidebar-ButtonBar">
+<button class="PreCrop-Sidebar-cancel_button bttn bttn_white">Cancel</button><button class="PreCrop-Sidebar-crop_button bttn bttn_dark">Ok</button>
+</div>
+</div>
+</div>
+</div>
+
+<div tabindex="-1" id="App-Progress-Dialog" class="modal">
+<div class="modal-dialog modal-sm">
+<div class="modal-content">
+<div class="modal-body">
+<div id="App-Progress-Pane">
+
+<table>
+<tr id="App-Progress-Upload-Pane" class="App-Progress-progress">
+<td style="font-weight: 500;">Upload</td>
+<td>
+<div class="progress">
+<div id="App-Progress-Upload-Bar" class="progress-bar App-Progress-bar">
+</div>
+</div>
+</td>
+</tr>
+<tr id="App-Progress-Process-Pane" class="App-Progress-progress">
+<td style="font-weight: 500;">Process</td>
+<td>
+<div class="progress">
+<div id="App-Progress-Process-Bar" class="progress-bar App-Progress-bar">
+</div>
+</div>
+</td>
+</tr>
+<tr id="App-Progress-Download-Pane" class="App-Progress-progress">
+<td style="font-weight: 500;">Fetch</td>
+<td>
+<div class="progress">
+<div id="App-Progress-Download-Bar" class="progress-bar App-Progress-bar">
+</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="modal-footer">
+<button style="float: right;" data-dismiss="modal" class="bttn bttn_red App-cancel_upload">Cancel</button>
+</div>
+</div>
+</div>
+</div>
+<div tabindex="-1" id="App-Error-Dialog" class="modal">
+<div class="modal-dialog modal-lg">
+<div class="modal-content">
+<div class="modal-header">
+<h3>Error</h3>
+</div>
+<div id="App-Error-Message" class="modal-body">
+</div>
+<div class="modal-footer">
+<button id="App-Error-RetryButton" class="btn btn-warning">Retry</button><a href="/" class="btn btn-default App-force_exit">Exit Application</a>
+</div>
+</div>
+</div>
+</div>
+<script src="/m/app.js"></script>
+</body></html>

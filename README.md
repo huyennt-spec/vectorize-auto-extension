@@ -41,7 +41,7 @@ trang sẽ không tự tải trùng.
 
 ## Cài đặt
 
-1. Tải file `vectorizer-auto-click-v1.6.1.zip` rồi giải nén. Bạn sẽ có thư mục
+1. Tải file `vectorizer-auto-click-v1.6.2.zip` rồi giải nén. Bạn sẽ có thư mục
    `vectorizer-auto-click` (bên trong có file `manifest.json`).
 2. Mở Chrome (cửa sổ bình thường), vào `chrome://extensions`.
 3. Bật **Chế độ dành cho nhà phát triển** (*Developer mode*).
