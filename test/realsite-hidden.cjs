@@ -146,16 +146,18 @@ const tests = {
 (async () => {
   const names = ONLY.length ? ONLY : Object.keys(tests);
   let allPass = true;
-  const results = await Promise.all(names.map(async (name, i) => {
-    await sleep(i * 2000);
+  // Chạy lần lượt từng bài: các trình duyệt dùng chung một màn hình ảo, cửa sổ mở sau che cửa sổ trước nên
+  // trang của bài trước vẫn bị coi là "ẩn" dù đã chọn lại tab (bài H1 sẽ hỏng vì lý do không liên quan).
+  const results = [];
+  for (const name of names) {
     const t = await launch();
     let r;
     try { r = await tests[name](t); } catch (e) { r = { pass: false, error: String(e) }; }
     r.ends = (await t.ends().catch(() => [])).map((e) => ({ reason: e.reason, hidden: e.hidden, stage: e.stage, clicks: e.clicks, tries: e.tries, sawBusy: e.sawBusy }));
     r.logs = t.logs;
     t.close();
-    return [name, r];
-  }));
+    results.push([name, r]);
+  }
   for (const [name, r] of results) {
     allPass = allPass && r.pass;
     console.log(`${r.pass ? 'PASS' : 'FAIL'} ${name} ${JSON.stringify({ ...r, logs: undefined, pass: undefined })}`);
